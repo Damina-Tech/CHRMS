@@ -14,11 +14,16 @@ export interface User {
   permissions: string[];
 }
 
+/** Result is returned synchronously so callers can show accurate error text in toasts */
+export type LoginResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
 interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (email: string, password: string) => Promise<boolean>;
-  loginWithSSO: (provider: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<LoginResult>;
+  loginWithSSO: (provider: string) => Promise<LoginResult>;
   logout: () => void;
   isAuthenticated: boolean;
   hasPermission: (permission: string) => boolean;
@@ -94,7 +99,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     hydrate();
   }, [hydrate]);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (
+    email: string,
+    password: string
+  ): Promise<LoginResult> => {
     setIsLoading(true);
     setLastError(null);
     try {
@@ -109,17 +117,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setToken(data.access_token);
       setUser(mapped);
       setIsLoading(false);
-      return true;
+      return { ok: true };
     } catch (e) {
-      setLastError(getApiErrorMessage(e));
+      const error = getApiErrorMessage(e);
+      setLastError(error);
       setIsLoading(false);
-      return false;
+      return { ok: false, error };
     }
   };
 
-  const loginWithSSO = async (_provider: string): Promise<boolean> => {
-    setLastError("SSO is not configured for CHRMS. Use email and password.");
-    return false;
+  const loginWithSSO = async (_provider: string): Promise<LoginResult> => {
+    const error = "SSO is not configured for CHRMS. Use email and password.";
+    setLastError(error);
+    return { ok: false, error };
   };
 
   const logout = () => {

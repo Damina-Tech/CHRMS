@@ -9,6 +9,9 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from '@/hooks/use-toast';
 import { Building2, Chrome, Github, Loader2 } from 'lucide-react';
 
+const apiBase =
+  import.meta.env.VITE_API_URL || "http://localhost:3000";
+
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,8 +24,8 @@ const LoginPage: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const success = await login(email, password);
-      if (success) {
+      const result = await login(email, password);
+      if (result.ok) {
         toast({
           title: "Login Successful",
           description: "Welcome to CHRMS.",
@@ -31,16 +34,15 @@ const LoginPage: React.FC = () => {
       } else {
         toast({
           title: "Login Failed",
-          description:
-            "Invalid email or password. Demo: admin@chiro.gov.et / password123",
+          description: result.error,
           variant: "destructive",
         });
       }
-    } catch (error) {
+    } catch {
       toast({
         title: "Error",
-        description: "An error occurred during login.",
-        variant: "destructive"
+        description: "An unexpected error occurred during login.",
+        variant: "destructive",
       });
     } finally {
       setIsLoading(false);
@@ -50,19 +52,25 @@ const LoginPage: React.FC = () => {
   const handleSSOLogin = async (provider: string) => {
     setIsLoading(true);
     try {
-      const success = await loginWithSSO(provider);
-      if (success) {
+      const result = await loginWithSSO(provider);
+      if (result.ok) {
         toast({
           title: "SSO Login Successful",
-          description: `Logged in with ${provider}`
+          description: `Logged in with ${provider}`,
         });
         navigate('/dashboard');
+      } else {
+        toast({
+          title: "SSO unavailable",
+          description: result.error,
+          variant: "destructive",
+        });
       }
-    } catch (error) {
+    } catch {
       toast({
         title: "SSO Login Failed",
         description: "Failed to authenticate with SSO provider.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsLoading(false);
@@ -86,16 +94,25 @@ const LoginPage: React.FC = () => {
         <Card className="shadow-lg" data-id="nn7m6b787" data-path="src/pages/LoginPage.tsx">
           <CardHeader data-id="p34dd2tkz" data-path="src/pages/LoginPage.tsx">
             <CardTitle data-id="q4zut3pka" data-path="src/pages/LoginPage.tsx">Sign In</CardTitle>
-            <CardDescription data-id="uhnm8n78z" data-path="src/pages/LoginPage.tsx">
-              Enter your credentials to access the HRMS system
+            <CardDescription>
+              Enter your credentials to access CHRMS (backend must be running)
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6" data-id="1mt5nb4b9" data-path="src/pages/LoginPage.tsx">
             {/* Demo Credentials */}
-            <div className="bg-blue-50 p-3 rounded-lg text-sm" data-id="vd6ukug4y" data-path="src/pages/LoginPage.tsx">
-              <p className="font-medium text-blue-800 mb-1" data-id="fyvkn5g5t" data-path="src/pages/LoginPage.tsx">Demo Credentials:</p>
-              <p className="text-blue-700" data-id="xx14ho2u4" data-path="src/pages/LoginPage.tsx">Email: admin@company.com</p>
-              <p className="text-blue-700" data-id="woeu2rnkp" data-path="src/pages/LoginPage.tsx">Password: password123</p>
+            <div className="bg-blue-50 p-3 rounded-lg text-sm space-y-1">
+              <p className="font-medium text-blue-800">Demo accounts (after seed)</p>
+              <p className="text-blue-700">
+                <span className="font-medium">Admin:</span> admin@chiro.gov.et / password123
+              </p>
+              <p className="text-blue-700">
+                <span className="font-medium">Officer:</span> housing@chiro.gov.et / password123
+              </p>
+              <p className="text-blue-600 text-xs pt-1 border-t border-blue-200 mt-2">
+                API: {apiBase} · Run{" "}
+                <code className="bg-blue-100 px-1 rounded">npx prisma db seed</code> if
+                users are missing
+              </p>
             </div>
 
             <form onSubmit={handleLogin} className="space-y-4" data-id="1x51ohzy6" data-path="src/pages/LoginPage.tsx">
@@ -177,9 +194,9 @@ const LoginPage: React.FC = () => {
         </Card>
 
         {/* Additional Info */}
-        <div className="text-center text-xs text-gray-500" data-id="7bfqzi4e3" data-path="src/pages/LoginPage.tsx">
-          <p data-id="rsplyivqd" data-path="src/pages/LoginPage.tsx">© 2024 HRMS Portal. All rights reserved.</p>
-          <p data-id="5nmpf7z9b" data-path="src/pages/LoginPage.tsx">Powered by React.js & FastAPI</p>
+        <div className="text-center text-xs text-gray-500">
+          <p>© Chiro City Administration — CHRMS</p>
+          <p>React · NestJS API</p>
         </div>
       </div>
     </div>);

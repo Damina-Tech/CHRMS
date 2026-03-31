@@ -31,7 +31,7 @@ DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/chrms?schema=public"
 ```bash
 cd backend
 cp .env.example .env
-# Edit .env — set DATABASE_URL, JWT_SECRET, CORS_ORIGIN (e.g. http://localhost:8080)
+# Edit .env — set DATABASE_URL, JWT_SECRET, CORS_ORIGIN (comma-separated if UI uses several ports, e.g. http://localhost:8080,http://localhost:8081). If omitted, 8080 and 8081 are allowed by default.
 
 npm install
 npx prisma migrate deploy
