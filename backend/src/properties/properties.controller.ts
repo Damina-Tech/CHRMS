@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { PropertyStatus } from '@prisma/client';
 import { Permission } from '../common/constants/permissions';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
@@ -39,5 +39,11 @@ export class PropertiesController {
   @RequirePermissions(Permission.PROPERTIES_WRITE)
   update(@Param('id') id: string, @Body() dto: UpdatePropertyDto) {
     return this.properties.update(id, dto);
+  }
+
+  @Delete(':id')
+  @RequirePermissions(Permission.PROPERTIES_WRITE)
+  remove(@Param('id') id: string) {
+    return this.properties.remove(id);
   }
 }

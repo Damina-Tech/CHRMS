@@ -3,10 +3,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PropertyStatus } from '@prisma/client';
+import { Prisma, PropertyStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { isRentalOverdue } from './rental-overdue.util';
 import { CreateRentalDto } from './dto/create-rental.dto';
+import { UpdateRentalDto } from './dto/update-rental.dto';
 
 @Injectable()
 export class RentalsService {
@@ -91,6 +92,66 @@ export class RentalsService {
         data: { status: PropertyStatus.rented },
       });
       return rental;
+    });
+  }
+
+  async update(id: string, dto: UpdateRentalDto) {
+    const data: Prisma.RentalUpdateInput = {};
+    if (dto.startDate !== undefined) data.startDate = new Date(dto.startDate);
+    if (dto.endDate !== undefined) data.endDate = new Date(dto.endDate);
+    if (dto.monthlyRent !== undefined) data.monthlyRent = dto.monthlyRent;
+    if (dto.dueDay !== undefined) data.dueDay = dto.dueDay;
+    if (dto.deposit !== undefined) data.deposit = dto.deposit;
+    if (dto.status !== undefined) data.status = dto.status;
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.rental.findUnique({
+          where: { id },
+          select: { id: true, propertyId: true, status: true },
+        });
+        if (!existing) throw new NotFoundException('Rental not found');
+
+        const rental = await tx.rental.update({
+          where: { id },
+          data,
+        });
+
+        const nextStatus = dto.status ?? existing.status;
+        if (existing.status !== nextStatus) {
+          await tx.property.update({
+            where: { id: existing.propertyId },
+            data: {
+              status:
+                nextStatus === 'active' ? PropertyStatus.rented : PropertyStatus.available,
+            },
+          });
+        }
+
+        return rental;
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+        throw new NotFoundException('Rental not found');
+      }
+      throw e;
+    }
+  }
+
+  async remove(id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const rental = await tx.rental.findUnique({
+        where: { id },
+        select: { id: true, propertyId: true },
+      });
+      if (!rental) throw new NotFoundException('Rental not found');
+
+      const deleted = await tx.rental.delete({ where: { id } });
+      await tx.property.update({
+        where: { id: rental.propertyId },
+        data: { status: PropertyStatus.available },
+      });
+      return deleted;
     });
   }
 }

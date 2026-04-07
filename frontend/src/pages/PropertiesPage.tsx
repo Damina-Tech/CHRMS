@@ -26,8 +26,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/chrms/StatusBadge";
+import { ConfirmActionDialog } from "@/components/chrms/ConfirmActionDialog";
 import { api, getApiErrorMessage } from "@/services/api";
-import { Search, Home, Eye, Pencil } from "lucide-react";
+import { Search, Home, Eye, Pencil, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -53,6 +54,7 @@ export default function PropertiesPage() {
   const [status, setStatus] = useState<string>("all");
   const [woreda, setWoreda] = useState<string>("all");
   const [open, setOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [form, setForm] = useState({
     code: "",
     type: "residential",
@@ -109,6 +111,23 @@ export default function PropertiesPage() {
         description: getApiErrorMessage(err),
         variant: "destructive",
       });
+    }
+  };
+
+  const handleDelete = async (row: PropertyRow) => {
+    try {
+      setDeletingId(row.id);
+      await api.delete(`/properties/${row.id}`);
+      toast({ title: "Property deleted" });
+      refetch();
+    } catch (err) {
+      toast({
+        title: "Failed to delete property",
+        description: getApiErrorMessage(err),
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -326,6 +345,22 @@ export default function PropertiesPage() {
                             Edit
                           </Link>
                         </Button>
+                        <ConfirmActionDialog
+                          title="Delete property"
+                          description={`Delete property ${row.code}? This action cannot be undone.`}
+                          confirmLabel="Delete"
+                          onConfirm={() => handleDelete(row)}
+                          disabled={deletingId === row.id}
+                        >
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            disabled={deletingId === row.id}
+                          >
+                            <Trash2 className="h-4 w-4 mr-1" />
+                            {deletingId === row.id ? "Deleting..." : "Delete"}
+                          </Button>
+                        </ConfirmActionDialog>
                       </TableCell>
                     </TableRow>
                   ))

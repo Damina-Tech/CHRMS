@@ -2,6 +2,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { Prisma, PropertyStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -222,6 +223,22 @@ export class PropertiesService {
       }
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new ConflictException('Property code already exists');
+      }
+      throw e;
+    }
+  }
+
+  async remove(id: string) {
+    try {
+      return await this.prisma.property.delete({ where: { id } });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+        throw new NotFoundException('Property not found');
+      }
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') {
+        throw new BadRequestException(
+          'Cannot delete property with related rental or sale records',
+        );
       }
       throw e;
     }
