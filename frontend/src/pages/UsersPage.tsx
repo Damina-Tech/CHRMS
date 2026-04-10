@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -34,266 +35,349 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ConfirmActionDialog } from "@/components/chrms/ConfirmActionDialog";
+import { useAuth } from "@/contexts/AuthContext";
+import { api, getApiErrorMessage } from "@/services/api";
+import { toast } from "@/hooks/use-toast";
 import {
   UserPlus,
   Shield,
-  Settings,
   Search,
   MoreHorizontal,
-  Lock,
-  Unlock,
   Trash2,
   Edit,
-  Eye,
   Users as UsersIcon,
   Crown,
   User,
 } from "lucide-react";
 import { format } from "date-fns";
-import { Checkbox } from '@/components/ui/checkbox';
+
+type ChrmsUser = {
+  id: string;
+  email: string;
+  fullName: string;
+  role: "ADMIN" | "HOUSING_OFFICER";
+  createdAt: string;
+  updatedAt: string;
+};
+
+type RoleOverview = {
+  role: string;
+  label: string;
+  permissions: string[];
+};
+
+const ROLE_LABEL: Record<ChrmsUser["role"], string> = {
+  ADMIN: "Administrator",
+  HOUSING_OFFICER: "Housing Officer",
+};
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase() || "?";
+}
 
 export default function UsersPage() {
-  const [users, setUsers] = useState([]);
-  const [roles, setRoles] = useState([]);
-  const [permissions, setPermissions] = useState([]);
-  const [notifications, setNotifications] = useState([]);
+  const { user: currentUser } = useAuth();
+  const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState("users");
   const [searchTerm, setSearchTerm] = useState("");
-  const [roleFilter, setRoleFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [addUserDialog, setAddUserDialog] = useState(false);
-  const [addRoleDialog, setAddRoleDialog] = useState(false);
-  const [editUserDialog, setEditUserDialog] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<string | null>(null);
+  const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [addOpen, setAddOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editing, setEditing] = useState<ChrmsUser | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ChrmsUser | null>(null);
 
-  const [userForm, setUserForm] = useState({
+  const [createForm, setCreateForm] = useState({
     email: "",
-    firstName: "",
-    lastName: "",
-    roleId: "",
-    department: "",
-    isActive: true,
+    fullName: "",
+    password: "",
+    role: "HOUSING_OFFICER" as ChrmsUser["role"],
   });
 
-  const [roleForm, setRoleForm] = useState({
-    name: "",
-    description: "",
-    permissions: [],
+  const [editForm, setEditForm] = useState({
+    email: "",
+    fullName: "",
+    role: "HOUSING_OFFICER" as ChrmsUser["role"],
+    password: "",
   });
 
-  const addNotification = ({ title, message, type }) => {
-    setNotifications([
-      ...notifications,
-      { title, message, type, id: Date.now() },
-    ]);
-  };
-
-  const addUser = (user) => {
-    const newUser = {
-      id: Date.now().toString(),
-      ...user,
-    };
-    setUsers([...users, newUser]);
-  };
-
-  const updateUserData = (userId, updates) => {
-    setUsers(users.map((u) => (u.id === userId ? { ...u, ...updates } : u)));
-  };
-
-  const deleteUser = (userId) => {
-    setUsers(users.filter((u) => u.id !== userId));
-  };
-
-  const addRole = (role) => {
-    const newRole = {
-      id: Date.now().toString(),
-      ...role,
-    };
-    setRoles([...roles, newRole]);
-  };
-
-  const deleteRole = (roleId) => {
-    setRoles(roles.filter((r) => r.id !== roleId));
-  };
-
-  const getUsersByRole = (roleId) => users.filter((u) => u.role.id === roleId);
-  const getActiveUsers = () => users.filter((u) => u.isActive);
-
-  const filteredUsers = users.filter((user) => {
-    const matchesSearch =
-      user.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesRole = roleFilter === "all" || user.role.id === roleFilter;
-    const matchesStatus =
-      statusFilter === "all" ||
-      (statusFilter === "active" && user.isActive) ||
-      (statusFilter === "inactive" && !user.isActive);
-    return matchesSearch && matchesRole && matchesStatus;
+  const { data: users = [], isLoading: usersLoading, error: usersError } = useQuery({
+    queryKey: ["users"],
+    queryFn: async () => {
+      const res = await api.get<ChrmsUser[]>("/users");
+      return res.data;
+    },
   });
 
-  const handleAddUser = () => {
+  const { data: rolesOverview = [], isLoading: rolesLoading } = useQuery({
+    queryKey: ["users", "roles-overview"],
+    queryFn: async () => {
+      const res = await api.get<RoleOverview[]>("/users/roles/overview");
+      return res.data;
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      await api.post("/users", {
+        email: createForm.email.trim(),
+        fullName: createForm.fullName.trim(),
+        password: createForm.password,
+        role: createForm.role,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "User created" });
+      qc.invalidateQueries({ queryKey: ["users"] });
+      setAddOpen(false);
+      setCreateForm({
+        email: "",
+        fullName: "",
+        password: "",
+        role: "HOUSING_OFFICER",
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: "Failed to create user",
+        description: getApiErrorMessage(err),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      if (!editing) return;
+      const body: {
+        email?: string;
+        fullName?: string;
+        role?: ChrmsUser["role"];
+        password?: string;
+      } = {
+        email: editForm.email.trim(),
+        fullName: editForm.fullName.trim(),
+        role: editForm.role,
+      };
+      if (editForm.password.trim()) {
+        body.password = editForm.password;
+      }
+      await api.patch(`/users/${editing.id}`, body);
+    },
+    onSuccess: () => {
+      toast({ title: "User updated" });
+      qc.invalidateQueries({ queryKey: ["users"] });
+      setEditOpen(false);
+      setEditing(null);
+      setEditForm({ email: "", fullName: "", role: "HOUSING_OFFICER", password: "" });
+    },
+    onError: (err) => {
+      toast({
+        title: "Failed to update user",
+        description: getApiErrorMessage(err),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/users/${id}`);
+    },
+    onSuccess: () => {
+      toast({ title: "User deleted" });
+      qc.invalidateQueries({ queryKey: ["users"] });
+      setDeleteTarget(null);
+    },
+    onError: (err) => {
+      toast({
+        title: "Failed to delete user",
+        description: getApiErrorMessage(err),
+        variant: "destructive",
+      });
+      setDeleteTarget(null);
+    },
+  });
+
+  const filteredUsers = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return users.filter((u) => {
+      const matchQ =
+        !q ||
+        u.fullName.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q);
+      const matchRole = roleFilter === "all" || u.role === roleFilter;
+      return matchQ && matchRole;
+    });
+  }, [users, searchTerm, roleFilter]);
+
+  const stats = useMemo(() => {
+    const admins = users.filter((u) => u.role === "ADMIN").length;
+    const officers = users.filter((u) => u.role === "HOUSING_OFFICER").length;
+    return { total: users.length, admins, officers };
+  }, [users]);
+
+  const openEdit = (u: ChrmsUser) => {
+    setEditing(u);
+    setEditForm({
+      email: u.email,
+      fullName: u.fullName,
+      role: u.role,
+      password: "",
+    });
+    setEditOpen(true);
+  };
+
+  const submitCreate = (e: React.FormEvent) => {
+    e.preventDefault();
     if (
-      !userForm.email ||
-      !userForm.firstName ||
-      !userForm.lastName ||
-      !userForm.roleId
+      !createForm.email.trim() ||
+      !createForm.fullName.trim() ||
+      createForm.password.length < 8
     ) {
-      return addNotification({
-        title: "Missing Information",
-        message: "Please fill in all required fields",
-        type: "error",
+      toast({
+        title: "Check form",
+        description: "Email, full name, and password (min 8 characters) are required.",
+        variant: "destructive",
       });
+      return;
     }
-    const selectedRole = roles.find((r) => r.id === userForm.roleId);
-    if (!selectedRole) {
-      return addNotification({
-        title: "Invalid Role",
-        message: "Please select a valid role",
-        type: "error",
+    createMutation.mutate();
+  };
+
+  const submitEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editing) return;
+    if (!editForm.email.trim() || !editForm.fullName.trim()) {
+      toast({
+        title: "Check form",
+        description: "Email and full name are required.",
+        variant: "destructive",
       });
+      return;
     }
-    addUser({
-      ...userForm,
-      role: selectedRole,
-      permissions: selectedRole.permissions || [],
-    });
-    addNotification({
-      title: "User Added",
-      message: `${userForm.firstName} ${userForm.lastName} added.`,
-      type: "success",
-    });
-    setUserForm({
-      email: "",
-      firstName: "",
-      lastName: "",
-      roleId: "",
-      department: "",
-      isActive: true,
-    });
-    setAddUserDialog(false);
-  };
-
-  const handleAddRole = () => {
-    if (!roleForm.name || !roleForm.description) {
-      return addNotification({
-        title: "Missing Info",
-        message: "Provide role name and description",
-        type: "error",
+    if (editForm.password && editForm.password.length < 8) {
+      toast({
+        title: "Invalid password",
+        description: "New password must be at least 8 characters, or leave blank.",
+        variant: "destructive",
       });
+      return;
     }
-    addRole({
-      ...roleForm,
-      permissions: permissions.filter((p) =>
-        roleForm.permissions.includes(p.id)
-      ),
-    });
-    addNotification({
-      title: "Role Created",
-      message: `Role '${roleForm.name}' created`,
-      type: "success",
-    });
-    setRoleForm({ name: "", description: "", permissions: [] });
-    setAddRoleDialog(false);
+    updateMutation.mutate();
   };
 
-  const handleToggleUserStatus = (userId) => {
-    const user = users.find((u) => u.id === userId);
-    if (user) {
-      updateUserData(userId, { isActive: !user.isActive });
-      addNotification({
-        title: "User Updated",
-        message: `User ${user.isActive ? "deactivated" : "activated"}`,
-        type: "success",
-      });
-    }
-  };
-
-  const handleDeleteUser = (userId) => {
-    const user = users.find((u) => u.id === userId);
-    deleteUser(userId);
-    addNotification({
-      title: "User Deleted",
-      message: `${user.firstName} ${user.lastName} deleted`,
-      type: "success",
-    });
-  };
-
-  const handleDeleteRole = (roleId) => {
-    const usersWithRole = getUsersByRole(roleId);
-    if (usersWithRole.length > 0) {
-      return addNotification({
-        title: "Cannot Delete",
-        message: "Role assigned to users",
-        type: "error",
-      });
-    }
-    deleteRole(roleId);
-    addNotification({
-      title: "Role Deleted",
-      message: `Role deleted`,
-      type: "success",
-    });
-  };
-
-  const getRoleIcon = (role) => {
-    if (role.toLowerCase().includes("admin"))
-      return <Crown className="h-4 w-4 text-yellow-500" />;
-    if (role.toLowerCase().includes("manager"))
-      return <Shield className="h-4 w-4 text-blue-500" />;
-    return <User className="h-4 w-4 text-gray-500" />;
-  };
-
-  const stats = {
-    total: users.length,
-    active: getActiveUsers().length,
-    inactive: users.filter((u) => !u.isActive).length,
-    admins: users.filter((u) => u.role.name.toLowerCase().includes("admin"))
-      .length,
-    roles: roles.length,
+  const getRoleIcon = (role: ChrmsUser["role"]) => {
+    if (role === "ADMIN")
+      return <Crown className="h-4 w-4 text-amber-500" />;
+    return <User className="h-4 w-4 text-muted-foreground" />;
   };
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
+          <h1 className="text-3xl font-bold tracking-tight">User management</h1>
           <p className="text-muted-foreground">
-            Manage users, roles, and permissions for the system
+            Create and manage CHRMS accounts. Roles are fixed (Administrator, Housing Officer).
           </p>
         </div>
-        <div className="flex gap-2">
-          <Dialog open={addRoleDialog} onOpenChange={setAddRoleDialog}>
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <Shield className="mr-2 h-4 w-4" />
-                New Role
-              </Button>
-            </DialogTrigger>
-          </Dialog>
-          <Dialog open={addUserDialog} onOpenChange={setAddUserDialog}>
-            <DialogTrigger asChild>
-              <Button>
-                <UserPlus className="mr-2 h-4 w-4" />
-                Add User
-              </Button>
-            </DialogTrigger>
-          </Dialog>
-        </div>
+        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <UserPlus className="mr-2 h-4 w-4" />
+              Add user
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Add user</DialogTitle>
+              <DialogDescription>
+                New users sign in with email and the password you set here.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={submitCreate} className="space-y-4">
+              <div>
+                <Label>Full name</Label>
+                <Input
+                  value={createForm.fullName}
+                  onChange={(e) =>
+                    setCreateForm((f) => ({ ...f, fullName: e.target.value }))
+                  }
+                  required
+                />
+              </div>
+              <div>
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  value={createForm.email}
+                  onChange={(e) =>
+                    setCreateForm((f) => ({ ...f, email: e.target.value }))
+                  }
+                  required
+                />
+              </div>
+              <div>
+                <Label>Password</Label>
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  value={createForm.password}
+                  onChange={(e) =>
+                    setCreateForm((f) => ({ ...f, password: e.target.value }))
+                  }
+                  placeholder="Minimum 8 characters"
+                  required
+                  minLength={8}
+                />
+              </div>
+              <div>
+                <Label>Role</Label>
+                <Select
+                  value={createForm.role}
+                  onValueChange={(v) =>
+                    setCreateForm((f) => ({
+                      ...f,
+                      role: v as ChrmsUser["role"],
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="HOUSING_OFFICER">Housing Officer</SelectItem>
+                    <SelectItem value="ADMIN">Administrator</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createMutation.isPending}>
+                  {createMutation.isPending ? "Saving…" : "Create user"}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+            <CardTitle className="text-sm font-medium">Total users</CardTitle>
             <UsersIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -302,206 +386,133 @@ export default function UsersPage() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active</CardTitle>
-            <User className="h-4 w-4 text-green-600" />
+            <CardTitle className="text-sm font-medium">Administrators</CardTitle>
+            <Crown className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {stats.active}
-            </div>
+            <div className="text-2xl font-bold">{stats.admins}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Inactive</CardTitle>
-            <User className="h-4 w-4 text-red-600" />
+            <CardTitle className="text-sm font-medium">Housing officers</CardTitle>
+            <User className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">
-              {stats.inactive}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Admins</CardTitle>
-            <Crown className="h-4 w-4 text-yellow-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">
-              {stats.admins}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Roles</CardTitle>
-            <Shield className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.roles}</div>
+            <div className="text-2xl font-bold">{stats.officers}</div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Main Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="roles">Roles & Permissions</TabsTrigger>
+          <TabsTrigger value="roles">Roles & permissions</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="space-y-4">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <CardTitle>System Users</CardTitle>
-                  <CardDescription>
-                    Manage user accounts and access
-                  </CardDescription>
+                  <CardTitle>Accounts</CardTitle>
+                  <CardDescription>All users who can sign in to CHRMS</CardDescription>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <div className="relative">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Search users..."
+                      placeholder="Search by name or email…"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-8 w-64"
+                      className="pl-8 w-64 max-w-full"
                     />
                   </div>
                   <Select value={roleFilter} onValueChange={setRoleFilter}>
-                    <SelectTrigger className="w-40">
+                    <SelectTrigger className="w-44">
                       <SelectValue placeholder="Role" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Roles</SelectItem>
-                      {roles.map((role) => (
-                        <SelectItem key={role.id} value={role.id}>
-                          {role.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue placeholder="Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Status</SelectItem>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="all">All roles</SelectItem>
+                      <SelectItem value="ADMIN">Administrator</SelectItem>
+                      <SelectItem value="HOUSING_OFFICER">Housing Officer</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>User</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Department</TableHead>
-                    <TableHead>Last Login</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredUsers.map((user) => (
-                    <TableRow key={user.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-8 w-8">
-                            <AvatarImage
-                              src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`}
-                            />
-                            <AvatarFallback>
-                              {user.firstName.charAt(0)}
-                              {user.lastName.charAt(0)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <div className="font-medium">
-                              {user.firstName} {user.lastName}
+              {usersError ? (
+                <p className="text-destructive text-sm">{getApiErrorMessage(usersError)}</p>
+              ) : usersLoading ? (
+                <p className="text-muted-foreground text-sm py-8 text-center">Loading…</p>
+              ) : filteredUsers.length === 0 ? (
+                <p className="text-muted-foreground text-sm py-8 text-center">No users match</p>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>User</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Created</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredUsers.map((u) => (
+                        <TableRow key={u.id}>
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-8 w-8">
+                                <AvatarFallback className="text-xs">
+                                  {initials(u.fullName)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <div className="font-medium">{u.fullName}</div>
+                                <div className="text-sm text-muted-foreground">{u.email}</div>
+                              </div>
                             </div>
-                            <div className="text-sm text-muted-foreground">
-                              {user.email}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              {getRoleIcon(u.role)}
+                              <Badge variant="outline">{ROLE_LABEL[u.role]}</Badge>
                             </div>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {getRoleIcon(user.role.name)}
-                          <Badge variant="outline">{user.role.name}</Badge>
-                        </div>
-                      </TableCell>
-                      <TableCell>{user.department}</TableCell>
-                      <TableCell>
-                        {user.lastLogin
-                          ? format(user.lastLogin, "MMM dd, HH:mm")
-                          : "Never"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          className={
-                            user.isActive
-                              ? "bg-green-100 text-green-800"
-                              : "bg-red-100 text-red-800"
-                          }
-                        >
-                          {user.isActive ? "Active" : "Inactive"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setSelectedUser(user.id);
-                                setEditUserDialog(true);
-                              }}
-                            >
-                              <Edit className="mr-2 h-4 w-4" />
-                              Edit User
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleToggleUserStatus(user.id)}
-                            >
-                              {user.isActive ? (
-                                <>
-                                  <Lock className="mr-2 h-4 w-4" />
-                                  Deactivate
-                                </>
-                              ) : (
-                                <>
-                                  <Unlock className="mr-2 h-4 w-4" />
-                                  Activate
-                                </>
-                              )}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleDeleteUser(user.id)}
-                              className="text-red-600"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete User
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">
+                            {format(new Date(u.createdAt), "MMM d, yyyy")}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => openEdit(u)}>
+                                  <Edit className="mr-2 h-4 w-4" />
+                                  Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  disabled={u.id === currentUser?.id}
+                                  onClick={() => setDeleteTarget(u)}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -509,294 +520,146 @@ export default function UsersPage() {
         <TabsContent value="roles" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Roles & Permissions</CardTitle>
+              <CardTitle>Roles & permissions</CardTitle>
               <CardDescription>
-                Define roles and assign permissions to control system access
+                CHRMS uses two built-in roles. Permissions are enforced by the API.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Users</TableHead>
-                    <TableHead>Permissions</TableHead>
-                    <TableHead>System Role</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {roles.map((role) => (
-                    <TableRow key={role.id}>
-                      <TableCell>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            {getRoleIcon(role.name)}
-                            <span className="font-medium">{role.name}</span>
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            {role.description}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">
-                          {getUsersByRole(role.id).length} users
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {role.permissions.slice(0, 2).map((permission) => (
-                            <Badge
-                              key={permission.id}
-                              variant="outline"
-                              className="text-xs"
-                            >
-                              {permission.name}
-                            </Badge>
-                          ))}
-                          {role.permissions.length > 2 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{role.permissions.length - 2} more
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {role.isSystemRole ? (
-                          <Badge className="bg-blue-100 text-blue-800">
-                            System
-                          </Badge>
+              {rolesLoading ? (
+                <p className="text-muted-foreground text-sm">Loading…</p>
+              ) : (
+                <div className="space-y-6">
+                  {rolesOverview.map((row) => (
+                    <div
+                      key={row.role}
+                      className="rounded-lg border p-4 space-y-3"
+                    >
+                      <div className="flex items-center gap-2">
+                        {row.role === "ADMIN" ? (
+                          <Crown className="h-5 w-5 text-amber-500" />
                         ) : (
-                          <Badge variant="outline">Custom</Badge>
+                          <Shield className="h-5 w-5 text-muted-foreground" />
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button size="sm" variant="outline">
-                            <Eye className="h-3 w-3" />
-                          </Button>
-                          {!role.isSystemRole && (
-                            <>
-                              <Button size="sm" variant="outline">
-                                <Edit className="h-3 w-3" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleDeleteRole(role.id)}
-                                disabled={getUsersByRole(role.id).length > 0}
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
+                        <h3 className="font-semibold text-lg">{row.label}</h3>
+                        <Badge variant="secondary" className="font-mono text-xs">
+                          {row.role}
+                        </Badge>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {row.permissions.map((p) => (
+                          <Badge key={p} variant="outline" className="text-xs font-normal">
+                            {p}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
                   ))}
-                </TableBody>
-              </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
 
-      {/* Add User Dialog */}
-      <Dialog open={addUserDialog} onOpenChange={setAddUserDialog}>
-        <DialogContent>
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditOpen(false);
+            setEditing(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add New User</DialogTitle>
-            <DialogDescription>
-              Create a new user account with role and permissions
-            </DialogDescription>
+            <DialogTitle>Edit user</DialogTitle>
+            <DialogDescription>Update profile, role, or set a new password.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="first-name">First Name *</Label>
-                <Input
-                  id="first-name"
-                  value={userForm.firstName}
-                  onChange={(e) =>
-                    setUserForm((prev) => ({
-                      ...prev,
-                      firstName: e.target.value,
-                    }))
-                  }
-                  placeholder="John"
-                />
-              </div>
-              <div>
-                <Label htmlFor="last-name">Last Name *</Label>
-                <Input
-                  id="last-name"
-                  value={userForm.lastName}
-                  onChange={(e) =>
-                    setUserForm((prev) => ({
-                      ...prev,
-                      lastName: e.target.value,
-                    }))
-                  }
-                  placeholder="Doe"
-                />
-              </div>
+          <form onSubmit={submitEdit} className="space-y-4">
+            <div>
+              <Label>Full name</Label>
+              <Input
+                value={editForm.fullName}
+                onChange={(e) =>
+                  setEditForm((f) => ({ ...f, fullName: e.target.value }))
+                }
+                required
+              />
             </div>
             <div>
-              <Label htmlFor="email">Email *</Label>
+              <Label>Email</Label>
               <Input
-                id="email"
                 type="email"
-                value={userForm.email}
+                value={editForm.email}
                 onChange={(e) =>
-                  setUserForm((prev) => ({ ...prev, email: e.target.value }))
+                  setEditForm((f) => ({ ...f, email: e.target.value }))
                 }
-                placeholder="john.doe@company.com"
+                required
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="role">Role *</Label>
-                <Select
-                  value={userForm.roleId}
-                  onValueChange={(value) =>
-                    setUserForm((prev) => ({ ...prev, roleId: value }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {roles.map((role) => (
-                      <SelectItem key={role.id} value={role.id}>
-                        {role.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="department">Department</Label>
-                <Select
-                  value={userForm.department}
-                  onValueChange={(value) =>
-                    setUserForm((prev) => ({ ...prev, department: value }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select department" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Engineering">Engineering</SelectItem>
-                    <SelectItem value="Sales">Sales</SelectItem>
-                    <SelectItem value="Marketing">Marketing</SelectItem>
-                    <SelectItem value="HR">HR</SelectItem>
-                    <SelectItem value="Finance">Finance</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="active"
-                checked={userForm.isActive}
-                onCheckedChange={(checked) =>
-                  setUserForm((prev) => ({ ...prev, isActive: !!checked }))
+            <div>
+              <Label>New password</Label>
+              <Input
+                type="password"
+                autoComplete="new-password"
+                value={editForm.password}
+                onChange={(e) =>
+                  setEditForm((f) => ({ ...f, password: e.target.value }))
                 }
+                placeholder="Leave blank to keep current password"
               />
-              <Label htmlFor="active">Active user account</Label>
+            </div>
+            <div>
+              <Label>Role</Label>
+              <Select
+                value={editForm.role}
+                onValueChange={(v) =>
+                  setEditForm((f) => ({ ...f, role: v as ChrmsUser["role"] }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="HOUSING_OFFICER">Housing Officer</SelectItem>
+                  <SelectItem value="ADMIN">Administrator</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setAddUserDialog(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditOpen(false);
+                  setEditing(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button onClick={handleAddUser}>Add User</Button>
+              <Button type="submit" disabled={updateMutation.isPending}>
+                {updateMutation.isPending ? "Saving…" : "Save changes"}
+              </Button>
             </div>
-          </div>
+          </form>
         </DialogContent>
       </Dialog>
 
-      {/* Add Role Dialog */}
-      <Dialog open={addRoleDialog} onOpenChange={setAddRoleDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Create New Role</DialogTitle>
-            <DialogDescription>
-              Define a new role with specific permissions
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="role-name">Role Name *</Label>
-              <Input
-                id="role-name"
-                value={roleForm.name}
-                onChange={(e) =>
-                  setRoleForm((prev) => ({ ...prev, name: e.target.value }))
-                }
-                placeholder="e.g., Team Lead"
-              />
-            </div>
-            <div>
-              <Label htmlFor="role-description">Description *</Label>
-              <Input
-                id="role-description"
-                value={roleForm.description}
-                onChange={(e) =>
-                  setRoleForm((prev) => ({
-                    ...prev,
-                    description: e.target.value,
-                  }))
-                }
-                placeholder="Brief description of the role"
-              />
-            </div>
-            <div>
-              <Label>Permissions</Label>
-              <div className="grid grid-cols-2 gap-4 mt-2 max-h-60 overflow-y-auto">
-                {permissions.map((permission) => (
-                  <div
-                    key={permission.id}
-                    className="flex items-center space-x-2"
-                  >
-                    <Checkbox
-                      id={permission.id}
-                      checked={roleForm.permissions.includes(permission.id)}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setRoleForm((prev) => ({
-                            ...prev,
-                            permissions: [...prev.permissions, permission.id],
-                          }));
-                        } else {
-                          setRoleForm((prev) => ({
-                            ...prev,
-                            permissions: prev.permissions.filter(
-                              (p) => p !== permission.id
-                            ),
-                          }));
-                        }
-                      }}
-                    />
-                    <Label htmlFor={permission.id} className="text-sm">
-                      <div className="font-medium">{permission.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {permission.description}
-                      </div>
-                    </Label>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setAddRoleDialog(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleAddRole}>Create Role</Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {deleteTarget ? (
+        <ConfirmActionDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setDeleteTarget(null);
+          }}
+          title="Delete user"
+          description={`Remove ${deleteTarget.fullName} (${deleteTarget.email})? This cannot be undone.`}
+          confirmLabel="Delete"
+          onConfirm={async () => {
+            await deleteMutation.mutateAsync(deleteTarget.id);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

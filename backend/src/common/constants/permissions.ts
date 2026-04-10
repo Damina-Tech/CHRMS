@@ -18,6 +18,7 @@ export enum Permission {
   SALE_PAYMENTS_WRITE = 'sale_payments.write',
   REPORTS_READ = 'reports.read',
   USERS_READ = 'users.read',
+  USERS_WRITE = 'users.write',
   AUDIT_READ = 'audit.read',
 }
 
