@@ -18,7 +18,10 @@ type ConfirmActionDialogProps = {
   cancelLabel?: string;
   onConfirm: () => void | Promise<void>;
   disabled?: boolean;
-  children: React.ReactNode;
+  /** When used with `open` / `onOpenChange`, no trigger is rendered (e.g. open from a menu). */
+  children?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 export function ConfirmActionDialog({
@@ -29,8 +32,14 @@ export function ConfirmActionDialog({
   onConfirm,
   disabled = false,
   children,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: ConfirmActionDialogProps) {
-  const [open, setOpen] = React.useState(false);
+  const [internalOpen, setInternalOpen] = React.useState(false);
+  const isControlled =
+    controlledOpen !== undefined && controlledOnOpenChange !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled ? controlledOnOpenChange : setInternalOpen;
   const [submitting, setSubmitting] = React.useState(false);
 
   const handleConfirm = async (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -46,9 +55,11 @@ export function ConfirmActionDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild disabled={disabled}>
-        {children}
-      </AlertDialogTrigger>
+      {!isControlled && children ? (
+        <AlertDialogTrigger asChild disabled={disabled}>
+          {children}
+        </AlertDialogTrigger>
+      ) : null}
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>

@@ -27,8 +27,15 @@ import {
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/chrms/StatusBadge";
 import { ConfirmActionDialog } from "@/components/chrms/ConfirmActionDialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { api, getApiErrorMessage } from "@/services/api";
-import { Search, Home, Eye, Pencil, Trash2 } from "lucide-react";
+import { Search, Home, Eye, Pencil, Trash2, MoreHorizontal } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -55,6 +62,7 @@ export default function PropertiesPage() {
   const [woreda, setWoreda] = useState<string>("all");
   const [open, setOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<PropertyRow | null>(null);
   const [form, setForm] = useState({
     code: "",
     type: "residential",
@@ -332,35 +340,46 @@ export default function PropertiesPage() {
                         <StatusBadge status={row.status} />
                       </TableCell>
                       <TableCell>{row.assignee ?? "—"}</TableCell>
-                      <TableCell className="text-right space-x-2">
-                        <Button variant="outline" size="sm" asChild>
-                          <Link to={`/properties/${row.id}`}>
-                            <Eye className="h-4 w-4 mr-1" />
-                            View
-                          </Link>
-                        </Button>
-                        <Button variant="ghost" size="sm" asChild>
-                          <Link to={`/properties/${row.id}?edit=1`}>
-                            <Pencil className="h-4 w-4 mr-1" />
-                            Edit
-                          </Link>
-                        </Button>
-                        <ConfirmActionDialog
-                          title="Delete property"
-                          description={`Delete property ${row.code}? This action cannot be undone.`}
-                          confirmLabel="Delete"
-                          onConfirm={() => handleDelete(row)}
-                          disabled={deletingId === row.id}
-                        >
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            disabled={deletingId === row.id}
-                          >
-                            <Trash2 className="h-4 w-4 mr-1" />
-                            {deletingId === row.id ? "Deleting..." : "Delete"}
-                          </Button>
-                        </ConfirmActionDialog>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              disabled={deletingId === row.id}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                              <span className="sr-only">Open menu</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem asChild>
+                              <Link to={`/properties/${row.id}`}>
+                                <Eye className="mr-2 h-4 w-4" />
+                                View
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <Link to={`/properties/${row.id}?edit=1`}>
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              disabled={deletingId === row.id}
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                setDeleteTarget(row);
+                              }}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   ))
@@ -370,6 +389,21 @@ export default function PropertiesPage() {
           </div>
         </CardContent>
       </Card>
+
+      {deleteTarget ? (
+        <ConfirmActionDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setDeleteTarget(null);
+          }}
+          title="Delete property"
+          description={`Delete property ${deleteTarget.code}? This action cannot be undone.`}
+          confirmLabel="Delete"
+          onConfirm={async () => {
+            await handleDelete(deleteTarget);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

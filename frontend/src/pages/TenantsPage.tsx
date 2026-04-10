@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   Card,
@@ -17,6 +18,13 @@ import {
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/chrms/StatusBadge";
 import { ConfirmActionDialog } from "@/components/chrms/ConfirmActionDialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,7 +44,7 @@ import {
 } from "@/components/ui/select";
 import { api, getApiErrorMessage } from "@/services/api";
 import { toast } from "@/hooks/use-toast";
-import { Users, Trash2, Pencil, Plus } from "lucide-react";
+import { Users, Trash2, Pencil, Plus, Eye, MoreHorizontal } from "lucide-react";
 
 type Row = {
   id: string;
@@ -58,6 +66,7 @@ type TenantDetail = {
 
 export default function TenantsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Row | null>(null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Row | null>(null);
   const [form, setForm] = useState({
@@ -318,31 +327,48 @@ export default function TenantsPage() {
                           <StatusBadge status={t.status} />
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => startEdit(t)}
-                            className="mr-2"
-                          >
-                            <Pencil className="h-4 w-4 mr-1" />
-                            Edit
-                          </Button>
-                          <ConfirmActionDialog
-                            title="Delete tenant"
-                            description={`Delete tenant ${t.fullName}? This action cannot be undone.`}
-                            confirmLabel="Delete"
-                            onConfirm={() => handleDelete(t)}
-                            disabled={deletingId === t.id}
-                          >
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              disabled={deletingId === t.id}
-                            >
-                              <Trash2 className="h-4 w-4 mr-1" />
-                              {deletingId === t.id ? "Deleting..." : "Delete"}
-                            </Button>
-                          </ConfirmActionDialog>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                                disabled={deletingId === t.id}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                                <span className="sr-only">Open menu</span>
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem asChild>
+                                <Link to={`/tenants/${t.id}`}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  View
+                                </Link>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  void startEdit(t);
+                                }}
+                              >
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                disabled={deletingId === t.id}
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  setDeleteTarget(t);
+                                }}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     ))
@@ -440,6 +466,21 @@ export default function TenantsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {deleteTarget ? (
+        <ConfirmActionDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setDeleteTarget(null);
+          }}
+          title="Delete tenant"
+          description={`Delete tenant ${deleteTarget.fullName}? This action cannot be undone.`}
+          confirmLabel="Delete"
+          onConfirm={async () => {
+            await handleDelete(deleteTarget);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

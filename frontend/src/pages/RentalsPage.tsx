@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   Card,
@@ -17,6 +18,13 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmActionDialog } from "@/components/chrms/ConfirmActionDialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,7 +44,15 @@ import {
 } from "@/components/ui/select";
 import { api, getApiErrorMessage } from "@/services/api";
 import { toast } from "@/hooks/use-toast";
-import { FileText, AlertTriangle, Trash2, Pencil, Plus } from "lucide-react";
+import {
+  FileText,
+  AlertTriangle,
+  Trash2,
+  Pencil,
+  Plus,
+  Eye,
+  MoreHorizontal,
+} from "lucide-react";
 import { format } from "date-fns";
 
 type Row = {
@@ -57,6 +73,7 @@ type PropertyOption = { id: string; code: string; status: string };
 
 export default function RentalsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Row | null>(null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Row | null>(null);
   const [form, setForm] = useState({
@@ -374,31 +391,48 @@ export default function RentalsPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => startEdit(r)}
-                            className="mr-2"
-                          >
-                            <Pencil className="h-4 w-4 mr-1" />
-                            Edit
-                          </Button>
-                          <ConfirmActionDialog
-                            title="Delete rental"
-                            description={`Delete rental for ${r.property.code} / ${r.tenant.fullName}? This action cannot be undone.`}
-                            confirmLabel="Delete"
-                            onConfirm={() => handleDelete(r)}
-                            disabled={deletingId === r.id}
-                          >
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              disabled={deletingId === r.id}
-                            >
-                              <Trash2 className="h-4 w-4 mr-1" />
-                              {deletingId === r.id ? "Deleting..." : "Delete"}
-                            </Button>
-                          </ConfirmActionDialog>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                                disabled={deletingId === r.id}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                                <span className="sr-only">Open menu</span>
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem asChild>
+                                <Link to={`/rentals/${r.id}`}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  View
+                                </Link>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  startEdit(r);
+                                }}
+                              >
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                disabled={deletingId === r.id}
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  setDeleteTarget(r);
+                                }}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     ))
@@ -501,6 +535,21 @@ export default function RentalsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {deleteTarget ? (
+        <ConfirmActionDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setDeleteTarget(null);
+          }}
+          title="Delete rental"
+          description={`Delete rental for ${deleteTarget.property.code} / ${deleteTarget.tenant.fullName}? This action cannot be undone.`}
+          confirmLabel="Delete"
+          onConfirm={async () => {
+            await handleDelete(deleteTarget);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

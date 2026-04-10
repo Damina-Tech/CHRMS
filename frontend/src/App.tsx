@@ -10,7 +10,9 @@ import Dashboard from "./pages/Dashboard";
 import PropertiesPage from "./pages/PropertiesPage";
 import PropertyDetailPage from "./pages/PropertyDetailPage";
 import TenantsPage from "./pages/TenantsPage";
+import TenantDetailPage from "./pages/TenantDetailPage";
 import RentalsPage from "./pages/RentalsPage";
+import RentalDetailPage from "./pages/RentalDetailPage";
 import SalesPage from "./pages/SalesPage";
 import PaymentsPage from "./pages/PaymentsPage";
 import ReportsPage from "./pages/ReportsPage";
@@ -87,7 +89,9 @@ function AppRoutes() {
         <Route path="properties" element={<PropertiesPage />} />
         <Route path="properties/:id" element={<PropertyDetailPage />} />
         <Route path="tenants" element={<TenantsPage />} />
+        <Route path="tenants/:id" element={<TenantDetailPage />} />
         <Route path="rentals" element={<RentalsPage />} />
+        <Route path="rentals/:id" element={<RentalDetailPage />} />
         <Route path="sales" element={<SalesPage />} />
         <Route path="payments" element={<PaymentsPage />} />
         <Route path="reports" element={<ReportsPage />} />
