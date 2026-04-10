@@ -1,6 +1,8 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useI18n } from "@/contexts/I18nContext";
+import type { MessageKey } from "@/i18n/locales";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -22,23 +24,34 @@ interface SidebarProps {
   isCollapsed: boolean;
 }
 
-const menuItems = [
-  { title: "Dashboard", icon: BarChart3, href: "/dashboard", permission: "dashboard.view" },
-  { title: "Properties", icon: Home, href: "/properties", permission: "properties.read" },
-  { title: "Tenants", icon: Users, href: "/tenants", permission: "tenants.read" },
-  { title: "Rentals", icon: FileText, href: "/rentals", permission: "rentals.read" },
-  { title: "Sales", icon: Banknote, href: "/sales", permission: "sales.read" },
-  { title: "Payments", icon: CreditCard, href: "/payments", permission: "payments.read" },
-  { title: "Reports", icon: BarChart3, href: "/reports", permission: "reports.view" },
+const menuItems: {
+  titleKey: MessageKey;
+  icon: typeof BarChart3;
+  href: string;
+  permission: string;
+}[] = [
+  { titleKey: "nav.dashboard", icon: BarChart3, href: "/dashboard", permission: "dashboard.view" },
+  { titleKey: "nav.properties", icon: Home, href: "/properties", permission: "properties.read" },
+  { titleKey: "nav.tenants", icon: Users, href: "/tenants", permission: "tenants.read" },
+  { titleKey: "nav.rentals", icon: FileText, href: "/rentals", permission: "rentals.read" },
+  { titleKey: "nav.sales", icon: Banknote, href: "/sales", permission: "sales.read" },
+  { titleKey: "nav.payments", icon: CreditCard, href: "/payments", permission: "payments.read" },
+  { titleKey: "nav.reports", icon: BarChart3, href: "/reports", permission: "reports.view" },
 ];
 
-const adminItems = [
-  { title: "User Management", icon: Shield, href: "/admin/users", permission: "*" },
-  { title: "System Settings", icon: Settings, href: "/admin/settings", permission: "*" },
+const adminItems: {
+  titleKey: MessageKey;
+  icon: typeof Shield;
+  href: string;
+  permission: string;
+}[] = [
+  { titleKey: "nav.userManagement", icon: Shield, href: "/admin/users", permission: "*" },
+  { titleKey: "nav.systemSettings", icon: Settings, href: "/admin/settings", permission: "*" },
 ];
 
 const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
   const { user, logout, hasPermission } = useAuth();
+  const { t } = useI18n();
 
   const filteredMenuItems = menuItems.filter(
     (item) => item.permission === "*" || hasPermission(item.permission)
@@ -50,26 +63,26 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
 
   return (
     <div
-      className={`bg-white border-r border-gray-200 transition-all duration-300 ${
+      className={`bg-card border-r border-border transition-all duration-300 ${
         isCollapsed ? "w-16" : "w-64"
       } h-full flex flex-col`}
     >
-      <div className="p-4 border-b border-gray-200">
+      <div className="p-4 border-b border-border">
         <div className="flex items-center space-x-3">
           <div className="h-8 w-8 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-lg flex items-center justify-center">
             <Building2 className="h-5 w-5 text-white" />
           </div>
           {!isCollapsed && (
             <div>
-              <h1 className="text-lg font-bold text-gray-900">CHRMS</h1>
-              <p className="text-xs text-gray-500">Chiro City Housing</p>
+              <h1 className="text-lg font-bold text-foreground">{t("app.title")}</h1>
+              <p className="text-xs text-muted-foreground">{t("app.subtitle")}</p>
             </div>
           )}
         </div>
       </div>
 
       {!isCollapsed && user && (
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-4 border-b border-border">
           <div className="flex items-center space-x-3">
             <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-center">
               <span className="text-white font-medium text-sm">
@@ -77,9 +90,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
               </span>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
-              <p className="text-xs text-gray-500 truncate">{user.designation}</p>
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 mt-1">
+              <p className="text-sm font-medium text-foreground truncate">{user.name}</p>
+              <p className="text-xs text-muted-foreground truncate">{user.designation}</p>
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200 mt-1">
                 {user.role.replace(/_/g, " ")}
               </span>
             </div>
@@ -98,15 +111,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
                 className={({ isActive }) =>
                   `flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                     isActive
-                      ? "bg-blue-50 text-blue-700 border-r-2 border-blue-700"
-                      : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                      ? "bg-blue-50 text-blue-700 border-r-2 border-blue-700 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-500"
+                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                   } ${isCollapsed ? "justify-center" : ""}`
                 }
               >
                 <Icon className={`h-5 w-5 ${!isCollapsed ? "mr-3" : ""}`} />
                 {!isCollapsed && (
                   <>
-                    {item.title}
+                    {t(item.titleKey)}
                     <ChevronRight className="ml-auto h-4 w-4 opacity-50" />
                   </>
                 )}
@@ -118,11 +131,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
             <>
               <Separator className="my-3" />
               <div
-                className={`px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider ${
+                className={`px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${
                   isCollapsed ? "text-center" : ""
                 }`}
               >
-                {!isCollapsed ? "Admin" : "A"}
+                {!isCollapsed ? t("nav.admin") : "A"}
               </div>
               {filteredAdminItems.map((item) => {
                 const Icon = item.icon;
@@ -133,15 +146,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
                     className={({ isActive }) =>
                       `flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                         isActive
-                          ? "bg-red-50 text-red-700 border-r-2 border-red-700"
-                          : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                          ? "bg-red-50 text-red-700 border-r-2 border-red-700 dark:bg-red-950/40 dark:text-red-300 dark:border-red-500"
+                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                       } ${isCollapsed ? "justify-center" : ""}`
                     }
                   >
                     <Icon className={`h-5 w-5 ${!isCollapsed ? "mr-3" : ""}`} />
                     {!isCollapsed && (
                       <>
-                        {item.title}
+                        {t(item.titleKey)}
                         <ChevronRight className="ml-auto h-4 w-4 opacity-50" />
                       </>
                     )}
@@ -153,16 +166,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
         </nav>
       </ScrollArea>
 
-      <div className="p-3 border-t border-gray-200">
+      <div className="p-3 border-t border-border">
         <Button
           variant="ghost"
           className={`w-full ${
             isCollapsed ? "px-2" : "justify-start"
-          } text-red-600 hover:text-red-700 hover:bg-red-50`}
+          } text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30`}
           onClick={logout}
         >
           <LogOut className={`h-5 w-5 ${!isCollapsed ? "mr-3" : ""}`} />
-          {!isCollapsed && "Logout"}
+          {!isCollapsed && t("header.logout")}
         </Button>
       </div>
     </div>

@@ -1,5 +1,8 @@
 import React from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useI18n } from "@/contexts/I18nContext";
+import { ThemeSwitcher } from "@/components/chrms/ThemeSwitcher";
+import { LanguageSwitcher } from "@/components/chrms/LanguageSwitcher";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -19,8 +22,6 @@ import {
   User,
   LogOut,
   HelpCircle,
-  Moon,
-  Sun,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
@@ -39,7 +40,7 @@ const getInitials = (name: string) => {
 
 const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
   const { user, logout } = useAuth();
-  const [isDark, setIsDark] = React.useState(false);
+  const { t } = useI18n();
 
   const notifications = [
     {
@@ -66,7 +67,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
 
   return (
     <header
-      className="bg-white border-b border-gray-200 px-6 py-4"
+      className="bg-card border-b border-border px-6 py-4"
       data-id="4rqgu5shv"
       data-path="src/components/layout/Header.tsx"
     >
@@ -103,12 +104,12 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
             data-path="src/components/layout/Header.tsx"
           >
             <Search
-              className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400"
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground"
               data-id="m79qgurx4"
               data-path="src/components/layout/Header.tsx"
             />
             <Input
-              placeholder="Search employees, departments..."
+              placeholder={t("header.searchPlaceholder")}
               className="pl-10 w-80"
               data-id="qh5v0ojwx"
               data-path="src/components/layout/Header.tsx"
@@ -122,29 +123,8 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
           data-id="n5jz4un9t"
           data-path="src/components/layout/Header.tsx"
         >
-          {/* Theme Toggle */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsDark(!isDark)}
-            className="p-2"
-            data-id="80hkbdl3z"
-            data-path="src/components/layout/Header.tsx"
-          >
-            {isDark ? (
-              <Sun
-                className="h-5 w-5"
-                data-id="1gq4sdnan"
-                data-path="src/components/layout/Header.tsx"
-              />
-            ) : (
-              <Moon
-                className="h-5 w-5"
-                data-id="56ulqp809"
-                data-path="src/components/layout/Header.tsx"
-              />
-            )}
-          </Button>
+          <LanguageSwitcher />
+          <ThemeSwitcher />
 
           {/* Notifications */}
           <DropdownMenu
@@ -191,7 +171,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
                 data-id="8uyhcjndu"
                 data-path="src/components/layout/Header.tsx"
               >
-                Notifications
+                {t("header.notifications")}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -199,7 +179,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
                   data-id="ms1kqkmqx"
                   data-path="src/components/layout/Header.tsx"
                 >
-                  Mark all read
+                  {t("header.markAllRead")}
                 </Button>
               </DropdownMenuLabel>
               <DropdownMenuSeparator
@@ -220,7 +200,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
                   >
                     <p
                       className={`text-sm ${
-                        notification.unread ? "font-medium" : "text-gray-600"
+                        notification.unread ? "font-medium" : "text-muted-foreground"
                       }`}
                       data-id="ulju4jo6b"
                       data-path="src/components/layout/Header.tsx"
@@ -236,7 +216,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
                     )}
                   </div>
                   <p
-                    className="text-xs text-gray-500 mt-1"
+                    className="text-xs text-muted-foreground mt-1"
                     data-id="t23dcthx9"
                     data-path="src/components/layout/Header.tsx"
                   >
@@ -253,7 +233,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
                 data-id="0ay0omfwu"
                 data-path="src/components/layout/Header.tsx"
               >
-                View all notifications
+                {t("header.viewAllNotifications")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -327,7 +307,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
                     {user?.name}
                   </p>
                   <p
-                    className="text-xs text-gray-500"
+                    className="text-xs text-muted-foreground"
                     data-id="hv2a0ikpb"
                     data-path="src/components/layout/Header.tsx"
                   >
@@ -356,7 +336,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
                   data-id="6din92n2g"
                   data-path="src/components/layout/Header.tsx"
                 />
-                Profile
+                {t("header.profile")}
               </DropdownMenuItem>
               <DropdownMenuItem
                 data-id="mrrzdt516"
@@ -367,7 +347,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
                   data-id="0gwd0i9jx"
                   data-path="src/components/layout/Header.tsx"
                 />
-                Settings
+                {t("header.settings")}
               </DropdownMenuItem>
               <DropdownMenuSeparator
                 data-id="1h8ok00g9"
@@ -384,7 +364,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
                   data-id="ykjkgukap"
                   data-path="src/components/layout/Header.tsx"
                 />
-                Logout
+                {t("header.logout")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

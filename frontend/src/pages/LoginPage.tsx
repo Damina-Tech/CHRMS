@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useI18n } from '@/contexts/I18nContext';
+import { ThemeSwitcher } from '@/components/chrms/ThemeSwitcher';
+import { LanguageSwitcher } from '@/components/chrms/LanguageSwitcher';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,6 +20,7 @@ const LoginPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login, loginWithSSO } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -34,7 +38,8 @@ const LoginPage: React.FC = () => {
       } else {
         toast({
           title: "Login Failed",
-          description: result.error,
+          description:
+            "error" in result ? result.error : "Login failed",
           variant: "destructive",
         });
       }
@@ -62,7 +67,8 @@ const LoginPage: React.FC = () => {
       } else {
         toast({
           title: "SSO unavailable",
-          description: result.error,
+          description:
+            "error" in result ? result.error : "SSO is not available.",
           variant: "destructive",
         });
       }
@@ -78,35 +84,39 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-cyan-50 flex items-center justify-center p-4" data-id="0v4to7nyx" data-path="src/pages/LoginPage.tsx">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-background to-cyan-50 dark:from-background dark:via-background dark:to-background flex items-center justify-center p-4 relative" data-id="0v4to7nyx" data-path="src/pages/LoginPage.tsx">
+      <div className="absolute top-4 end-4 flex items-center gap-1">
+        <LanguageSwitcher />
+        <ThemeSwitcher />
+      </div>
       <div className="w-full max-w-md space-y-8" data-id="hjwo2jiph" data-path="src/pages/LoginPage.tsx">
         {/* Logo and Header */}
         <div className="text-center" data-id="oq8qgjhxk" data-path="src/pages/LoginPage.tsx">
           <div className="mx-auto h-16 w-16 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-xl flex items-center justify-center mb-4" data-id="wkufmetdd" data-path="src/pages/LoginPage.tsx">
             <Building2 className="h-8 w-8 text-white" data-id="famyievx9" data-path="src/pages/LoginPage.tsx" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">CHRMS</h1>
-          <p className="text-gray-600 mt-2">
-            Chiro City Housing &amp; Rental Management — sign in
+          <h1 className="text-3xl font-bold text-foreground">{t('app.title')}</h1>
+          <p className="text-muted-foreground mt-2">
+            {t('login.subtitle')}
           </p>
         </div>
 
         <Card className="shadow-lg" data-id="nn7m6b787" data-path="src/pages/LoginPage.tsx">
           <CardHeader data-id="p34dd2tkz" data-path="src/pages/LoginPage.tsx">
-            <CardTitle data-id="q4zut3pka" data-path="src/pages/LoginPage.tsx">Sign In</CardTitle>
+            <CardTitle data-id="q4zut3pka" data-path="src/pages/LoginPage.tsx">{t('login.signIn')}</CardTitle>
             <CardDescription>
-              Enter your credentials to access CHRMS (backend must be running)
+              {t('login.cardDescription')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6" data-id="1mt5nb4b9" data-path="src/pages/LoginPage.tsx">
             {/* Demo Credentials */}
-            <div className="bg-blue-50 p-3 rounded-lg text-sm space-y-1">
-              <p className="font-medium text-blue-800">Demo accounts (after seed)</p>
-              <p className="text-blue-700">
-                <span className="font-medium">Admin:</span> admin@chiro.gov.et / password123
+            <div className="bg-blue-50 dark:bg-blue-950/40 p-3 rounded-lg text-sm space-y-1">
+              <p className="font-medium text-blue-800 dark:text-blue-200">{t('login.demoAccounts')}</p>
+              <p className="text-blue-700 dark:text-blue-300">
+                <span className="font-medium">{t('login.admin')}:</span> admin@chiro.gov.et / password123
               </p>
-              <p className="text-blue-700">
-                <span className="font-medium">Officer:</span> housing@chiro.gov.et / password123
+              <p className="text-blue-700 dark:text-blue-300">
+                <span className="font-medium">{t('login.officer')}:</span> housing@chiro.gov.et / password123
               </p>
               <p className="text-blue-600 text-xs pt-1 border-t border-blue-200 mt-2">
                 API: {apiBase} · Run{" "}
@@ -117,11 +127,11 @@ const LoginPage: React.FC = () => {
 
             <form onSubmit={handleLogin} className="space-y-4" data-id="1x51ohzy6" data-path="src/pages/LoginPage.tsx">
               <div className="space-y-2" data-id="oc9bic79t" data-path="src/pages/LoginPage.tsx">
-                <Label htmlFor="email" data-id="ak6ipegz9" data-path="src/pages/LoginPage.tsx">Email</Label>
+                <Label htmlFor="email" data-id="ak6ipegz9" data-path="src/pages/LoginPage.tsx">{t('login.email')}</Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="Enter your email"
+                  placeholder={t('login.emailPlaceholder')}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required data-id="8xsfc7dqu" data-path="src/pages/LoginPage.tsx" />
@@ -129,11 +139,11 @@ const LoginPage: React.FC = () => {
               </div>
 
               <div className="space-y-2" data-id="gwo3x3x9j" data-path="src/pages/LoginPage.tsx">
-                <Label htmlFor="password" data-id="rp93tcyml" data-path="src/pages/LoginPage.tsx">Password</Label>
+                <Label htmlFor="password" data-id="rp93tcyml" data-path="src/pages/LoginPage.tsx">{t('login.password')}</Label>
                 <Input
                   id="password"
                   type="password"
-                  placeholder="Enter your password"
+                  placeholder={t('login.passwordPlaceholder')}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required data-id="rmlfit5na" data-path="src/pages/LoginPage.tsx" />
@@ -148,10 +158,10 @@ const LoginPage: React.FC = () => {
                 {isLoading ?
                 <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" data-id="634u1we1q" data-path="src/pages/LoginPage.tsx" />
-                    Signing in...
+                    {t('login.signingIn')}
                   </> :
 
-                'Sign In'
+                t('login.signIn')
                 }
               </Button>
             </form>
@@ -161,7 +171,7 @@ const LoginPage: React.FC = () => {
                 <Separator data-id="3lxc7w1s9" data-path="src/pages/LoginPage.tsx" />
               </div>
               <div className="relative flex justify-center text-xs uppercase" data-id="uh8p4nfjs" data-path="src/pages/LoginPage.tsx">
-                <span className="bg-white px-2 text-gray-500" data-id="taiifdb6t" data-path="src/pages/LoginPage.tsx">Or continue with</span>
+                <span className="bg-background px-2 text-muted-foreground" data-id="taiifdb6t" data-path="src/pages/LoginPage.tsx">{t('login.orContinue')}</span>
               </div>
             </div>
 
@@ -187,15 +197,15 @@ const LoginPage: React.FC = () => {
               </Button>
             </div>
 
-            <div className="text-center text-sm text-gray-600" data-id="qq3kgxghm" data-path="src/pages/LoginPage.tsx">
-              <p data-id="0s4kaouu2" data-path="src/pages/LoginPage.tsx">Don't have an account? Contact your administrator</p>
+            <div className="text-center text-sm text-muted-foreground" data-id="qq3kgxghm" data-path="src/pages/LoginPage.tsx">
+              <p data-id="0s4kaouu2" data-path="src/pages/LoginPage.tsx">{t('login.noAccount')}</p>
             </div>
           </CardContent>
         </Card>
 
         {/* Additional Info */}
-        <div className="text-center text-xs text-gray-500">
-          <p>© Chiro City Administration — CHRMS</p>
+        <div className="text-center text-xs text-muted-foreground">
+          <p>{t('login.footer')}</p>
           <p>React · NestJS API</p>
         </div>
       </div>

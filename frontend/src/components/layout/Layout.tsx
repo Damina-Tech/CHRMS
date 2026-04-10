@@ -11,7 +11,11 @@ const Layout: React.FC = () => {
   };
 
   return (
-    <div className="h-screen flex overflow-hidden bg-gray-50" data-id="uk9zngm7p" data-path="src/components/layout/Layout.tsx">
+    <div
+      className="h-screen flex overflow-hidden bg-background text-foreground"
+      data-id="uk9zngm7p"
+      data-path="src/components/layout/Layout.tsx"
+    >
       {/* Sidebar */}
       <Sidebar isCollapsed={isSidebarCollapsed} data-id="ke46fck4a" data-path="src/components/layout/Layout.tsx" />
       
@@ -24,7 +28,11 @@ const Layout: React.FC = () => {
 
         
         {/* Page Content */}
-        <main className="flex-1 overflow-auto" data-id="5ofowlndt" data-path="src/components/layout/Layout.tsx">
+        <main
+          className="flex-1 overflow-auto bg-muted/30"
+          data-id="5ofowlndt"
+          data-path="src/components/layout/Layout.tsx"
+        >
           <div className="p-6" data-id="af3c03i8p" data-path="src/components/layout/Layout.tsx">
             <Outlet data-id="xz3yrqgpk" data-path="src/components/layout/Layout.tsx" />
           </div>
