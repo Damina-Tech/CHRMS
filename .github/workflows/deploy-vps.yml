@@ -1,0 +1,89 @@
+# Deploy HRMS (frontend + backend) to the VPS with Docker Compose.
+# Required GitHub secrets:
+#   VPS_HOST      - e.g. 196.189.237.39
+#   VPS_USER      - e.g. root
+#   VPS_SSH_KEY   - private key that can SSH to the VPS
+# Optional secrets:
+#   VPS_PORT      - SSH port (default 22)
+#   VPS_APP_DIR   - app path on VPS (default /var/www/HRMS)
+name: Deploy HRMS to VPS (Docker)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "deploy/**"
+      - "docker-compose.yml"
+      - ".env.example"
+      - ".github/workflows/deploy-vps.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vps-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: true
+          command_timeout: 40m
+          script: |
+            set -e
+            APP_DIR="${{ secrets.VPS_APP_DIR }}"
+            if [ -z "$APP_DIR" ]; then
+              APP_DIR="/var/www/HRMS"
+            fi
+
+            echo "==> Deploying into $APP_DIR"
+            cd "$APP_DIR"
+
+            echo "==> Fetching main"
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
+
+            if [ ! -f .env ]; then
+              echo "ERROR: $APP_DIR/.env is missing. Create it on the VPS first (from .env.example)."
+              exit 1
+            fi
+
+            echo "==> Building and starting containers"
+            docker compose --env-file .env up -d --build --remove-orphans
+
+            echo "==> Waiting for proxy + API health"
+            i=0
+            until curl -fsS \
+              -H "Host: hrms-api.chirocity.gov.et" \
+              http://127.0.0.1/health; do
+              i=$((i + 1))
+              if [ "$i" -ge 40 ]; then
+                echo "Health check failed after waiting. Recent logs:"
+                docker compose ps
+                docker compose logs --tail 80 proxy backend
+                exit 1
+              fi
+              echo "Not ready yet (attempt $i/40)..."
+              sleep 3
+            done
+            echo ""
+
+            echo "==> Pruning unused images"
+            docker image prune -f
+
+            echo "==> Status"
+            docker compose ps
+
+            echo "==> Deploy finished"
