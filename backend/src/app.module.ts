@@ -13,6 +13,7 @@ import { SalePaymentsModule } from './sale-payments/sale-payments.module';
 import { SalesModule } from './sales/sales.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { UsersModule } from './users/users.module';
+import { HealthController } from './health.controller';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -33,7 +34,7 @@ import { AppService } from './app.service';
     NotificationsModule,
     AuditModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, HealthController],
   providers: [AppService],
 })
 export class AppModule {}

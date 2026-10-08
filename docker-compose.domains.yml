@@ -1,0 +1,15 @@
+services:
+  chrms-api:
+    networks:
+      default: {}
+      edge:
+        aliases: [chrms-api]
+  chrms-web:
+    networks:
+      default: {}
+      edge:
+        aliases: [chrms-web]
+networks:
+  edge:
+    external: true
+    name: chirocity_edge

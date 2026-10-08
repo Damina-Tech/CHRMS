@@ -1,0 +1,52 @@
+name: chrms
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: chrms
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: chrms
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chrms -d chrms"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  chrms-api:
+    build: ./backend
+    image: chrms-api:local
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://chrms:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/chrms?schema=public
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      JWT_EXPIRES_SEC: 604800
+      CORS_ORIGIN: https://chrms.chirocity.gov.et
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 12
+  chrms-web:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: https://chrms-api.chirocity.gov.et
+    restart: unless-stopped
+    depends_on:
+      chrms-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+volumes:
+  postgres_data:

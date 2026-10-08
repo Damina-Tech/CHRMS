@@ -12,9 +12,6 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from '@/hooks/use-toast';
 import { Building2, Chrome, Github, Loader2 } from 'lucide-react';
 
-const apiBase =
-  import.meta.env.VITE_API_URL || "http://localhost:3000";
-
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -109,22 +106,6 @@ const LoginPage: React.FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6" data-id="1mt5nb4b9" data-path="src/pages/LoginPage.tsx">
-            {/* Demo Credentials */}
-            <div className="bg-blue-50 dark:bg-blue-950/40 p-3 rounded-lg text-sm space-y-1">
-              <p className="font-medium text-blue-800 dark:text-blue-200">{t('login.demoAccounts')}</p>
-              <p className="text-blue-700 dark:text-blue-300">
-                <span className="font-medium">{t('login.admin')}:</span> admin@chiro.gov.et / password123
-              </p>
-              <p className="text-blue-700 dark:text-blue-300">
-                <span className="font-medium">{t('login.officer')}:</span> housing@chiro.gov.et / password123
-              </p>
-              <p className="text-blue-600 text-xs pt-1 border-t border-blue-200 mt-2">
-                API: {apiBase} · Run{" "}
-                <code className="bg-blue-100 px-1 rounded">npx prisma db seed</code> if
-                users are missing
-              </p>
-            </div>
-
             <form onSubmit={handleLogin} className="space-y-4" data-id="1x51ohzy6" data-path="src/pages/LoginPage.tsx">
               <div className="space-y-2" data-id="oc9bic79t" data-path="src/pages/LoginPage.tsx">
                 <Label htmlFor="email" data-id="ak6ipegz9" data-path="src/pages/LoginPage.tsx">{t('login.email')}</Label>
@@ -206,7 +187,7 @@ const LoginPage: React.FC = () => {
         {/* Additional Info */}
         <div className="text-center text-xs text-muted-foreground">
           <p>{t('login.footer')}</p>
-          <p>React · NestJS API</p>
+          <p>React Â· NestJS API</p>
         </div>
       </div>
     </div>);

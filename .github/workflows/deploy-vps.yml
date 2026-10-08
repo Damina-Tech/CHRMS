@@ -1,81 +1,50 @@
-name: Deploy CHRMS to VPS (Docker)
-
+name: Deploy CHRMS to VPS
 on:
   push:
-    branches:
-      - main
-    paths:
-      - "backend/**"
-      - "frontend/**"
-      - "deploy/**"
-      - "docker-compose.yml"
-      - ".env.example"
-      - ".github/workflows/deploy-vps.yml"
+    branches: [main]
+    paths: ['backend/**', 'frontend/**', 'deploy/**', '*compose*.yml', '.env.example', '.github/workflows/deploy-vps.yml']
   workflow_dispatch:
-
+permissions:
+  contents: read
 concurrency:
-  group: deploy-vps-production
+  group: chrms-production
   cancel-in-progress: false
-
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify containers, migrations and health
+        env:
+          DEPLOY_DOMAINS: '0'
+        run: bash deploy/deploy.sh
+      - name: Clean up CI database
+        if: always()
+        run: docker compose down -v
   deploy:
+    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 45
-
     steps:
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1.2.0
+      - uses: appleboy/ssh-action@v1.2.0
+        env:
+          APP_DIR: ${{ secrets.VPS_APP_DIR || '/var/www/CHRMS' }}
+          DEPLOY_SHA: ${{ github.sha }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
-          script_stop: true
+          fingerprint: ${{ secrets.VPS_SSH_FINGERPRINT }}
+          envs: APP_DIR,DEPLOY_SHA
           command_timeout: 40m
           script: |
-            set -e
-            APP_DIR="${{ secrets.VPS_APP_DIR }}"
-            if [ -z "$APP_DIR" ]; then
-              APP_DIR="/var/www/CHRMS"
-            fi-
-
-            echo "==> Deploying into $APP_DIR"
+            set -eu
             cd "$APP_DIR"
-
-            echo "==> Fetching main"
+            git diff --quiet
+            git diff --cached --quiet
             git fetch origin main
-            git checkout main
-            git reset --hard origin/main
-
-            if [ ! -f .env ]; then
-              echo "ERROR: $APP_DIR/.env is missing. Create it on the VPS first (from .env.example)."
-              exit 1
-            fi
-
-            echo "==> Building and starting containers"
-            docker compose --env-file .env up -d --build --remove-orphans
-
-            echo "==> Waiting for proxy + API health"
-            i=0
-            until curl -fsS \
-              -H "Host: chrms-api.chirocity.gov.et" \
-              http://127.0.0.1/health; do
-              i=$((i + 1))
-              if [ "$i" -ge 40 ]; then
-                echo "Health check failed after waiting. Recent logs:"
-                docker compose ps
-                docker compose logs --tail 80 proxy backend
-                exit 1
-              fi
-              echo "Not ready yet (attempt $i/40)..."
-              sleep 3
-            done
-            echo ""
-
-            echo "==> Pruning unused images"
-            docker image prune -f
-
-            echo "==> Status"
-            docker compose ps
-
-            echo "==> Deploy finished"
+            git merge-base --is-ancestor "$DEPLOY_SHA" origin/main
+            git checkout --detach "$DEPLOY_SHA"
+            bash deploy/deploy.sh
