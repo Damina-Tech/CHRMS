@@ -1,0 +1,27 @@
+name: Inspect CHRMS VPS
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -eu
+            for path in /var/www/CHRMS /var/www/CHRMS/CHRMS; do
+              if [ -d "$path/.git" ]; then
+                echo "CHRMS clone: $path"
+                git -C "$path" remote -v
+                git -C "$path" status --short
+                if [ -f "$path/.env" ]; then echo 'Root production .env exists'; fi
+              fi
+            done
+            docker ps --format '{{.Names}} {{.Image}} {{.Ports}}'
+            docker inspect --format '{{.Name}} networks={{json .NetworkSettings.Networks}}' hrms-proxy-1
