@@ -1,6 +1,11 @@
 name: Inspect CHRMS VPS
 on:
   workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [inspect, reclaim-cache]
+        default: inspect
 permissions:
   contents: read
 jobs:
@@ -8,13 +13,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: appleboy/ssh-action@v1.2.0
+        env:
+          OPERATION: ${{ inputs.operation }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
+          envs: OPERATION
           script: |
             set -eu
+            df -h /var/lib/docker
+            df -i /var/lib/docker
+            docker system df
+            if [ "$OPERATION" = reclaim-cache ]; then
+              if pgrep -f '^docker compose' >/dev/null; then
+                echo 'Compose is active; refusing cache cleanup during a build.'
+                exit 1
+              fi
+              docker builder prune -af --filter until=24h
+              docker image prune -f
+              df -h /var/lib/docker
+              docker system df
+              exit 0
+            fi
             for path in /var/www/CHRMS /var/www/CHRMS/CHRMS; do
               if [ -d "$path/.git" ]; then
                 echo "CHRMS clone: $path"
