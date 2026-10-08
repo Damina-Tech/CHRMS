@@ -32,7 +32,7 @@ jobs:
             lvs --units b --nosuffix -o lv_path,lv_size
             if [ "$OPERATION" = expand-var ]; then
               test "$(findmnt -n -o SOURCE /var)" = /dev/mapper/vg0-lv--1
-              test "$(findmnt -n -o FSTYPE /var)" = ext4
+              test "$(findmnt -n -o FSTYPE /var)" = xfs
               size=$(lvs --noheadings --units b --nosuffix -o lv_size /dev/vg0/lv-1 | tr -d ' ')
               if awk "BEGIN {exit !($size < 9500000000)}"; then
                 lvextend --size +1536M --resizefs /dev/vg0/lv-1
