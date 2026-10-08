@@ -25,3 +25,24 @@ jobs:
             done
             docker ps --format '{{.Names}} {{.Image}} {{.Ports}}'
             docker inspect --format '{{.Name}} networks={{json .NetworkSettings.Networks}}' hrms-proxy-1
+            if docker inspect chrms-chrms-api-1 >/dev/null 2>&1; then
+              cd /var/www/CHRMS
+              export ADMIN_EMAIL="$(sed -n 's/^ADMIN_EMAIL=//p' .env | tr -d '\r')"
+              export ADMIN_PASSWORD="$(sed -n 's/^ADMIN_PASSWORD=//p' .env | tr -d '\r')"
+              docker exec -i -e ADMIN_EMAIL -e ADMIN_PASSWORD chrms-chrms-api-1 node <<'NODE'
+            (async () => {
+              const response = await fetch('http://127.0.0.1:3000/auth/login', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD }),
+              });
+              if (!response.ok) throw new Error('Administrator login failed: HTTP ' + response.status);
+              const data = await response.json();
+              const me = await fetch('http://127.0.0.1:3000/users/me', {
+                headers: { Authorization: 'Bearer ' + data.access_token },
+              });
+              if (!me.ok) throw new Error('Authenticated profile failed: HTTP ' + me.status);
+              console.log('Administrator login and authenticated profile passed.');
+            })().catch(error => { console.error(error.message); process.exitCode = 1; });
+            NODE
+              unset ADMIN_EMAIL ADMIN_PASSWORD
+            fi
