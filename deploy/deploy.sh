@@ -22,7 +22,7 @@ compose() {
 diagnostics() { compose ps || true; compose logs --tail 80 postgres chrms-api chrms-web || true; }
 trap diagnostics ERR
 compose config --quiet
-compose build --pull
+if [ "${SKIP_BUILD:-0}" != 1 ]; then compose build --pull; fi
 compose up -d --wait --wait-timeout 120 postgres
 compose run --rm --no-deps chrms-api npx prisma migrate deploy
 export ADMIN_EMAIL="$(sed -n 's/^ADMIN_EMAIL=//p' .env | tr -d '\r')"

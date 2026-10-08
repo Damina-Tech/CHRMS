@@ -6,6 +6,7 @@ COPY prisma ./prisma
 RUN npm ci
 COPY . .
 RUN npx prisma generate && npm run build
+RUN npm prune --omit=dev --ignore-scripts
 
 FROM node:22-bookworm-slim
 WORKDIR /app

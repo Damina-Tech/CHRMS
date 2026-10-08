@@ -9,6 +9,11 @@ Optional: VPS_PORT, VPS_APP_DIR (default /var/www/CHRMS), VPS_SSH_FINGERPRINT.
 Push main or manually run Deploy CHRMS to VPS. CI verifies container builds,
 migrations and service health before deployment. The VPS needs Compose v2,
 OpenSSL, and the existing chirocity_edge network and HRMS proxy/certbot containers.
+Images are built and verified in GitHub Actions, then uploaded through SSH to
+the VPS /tmp filesystem and loaded into Docker. The VPS does not install build
+dependencies or compile the application during automated deployment.
+Runtime images contain production dependencies, including the Prisma migration CLI.
+The current VPS has limited /var space, so use the GitHub workflow for upgrades.
 
 Manual deployment after updating your checkout:
 
