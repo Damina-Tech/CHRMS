@@ -4,7 +4,7 @@ on:
     inputs:
       operation:
         type: choice
-        options: [inspect, reclaim-cache]
+        options: [inspect, reclaim-cache, reclaim-all-cache]
         default: inspect
 permissions:
   contents: read
@@ -26,12 +26,19 @@ jobs:
             df -h /var/lib/docker
             df -i /var/lib/docker
             docker system df
-            if [ "$OPERATION" = reclaim-cache ]; then
+            df -h / /tmp /var
+            vgs || true
+            du -x -h --max-depth=1 /var 2>/dev/null || true
+            if [ "$OPERATION" = reclaim-cache ] || [ "$OPERATION" = reclaim-all-cache ]; then
               if pgrep -f '^docker compose' >/dev/null; then
                 echo 'Compose is active; refusing cache cleanup during a build.'
                 exit 1
               fi
-              docker builder prune -af --filter until=24h
+              if [ "$OPERATION" = reclaim-all-cache ]; then
+                docker builder prune -af
+              else
+                docker builder prune -af --filter until=24h
+              fi
               docker image prune -f
               df -h /var/lib/docker
               docker system df
