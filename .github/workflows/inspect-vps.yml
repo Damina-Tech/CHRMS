@@ -4,7 +4,7 @@ on:
     inputs:
       operation:
         type: choice
-        options: [inspect, reclaim-cache, reclaim-all-cache]
+        options: [inspect, reclaim-cache, reclaim-all-cache, expand-var]
         default: inspect
 permissions:
   contents: read
@@ -28,6 +28,18 @@ jobs:
             docker system df
             df -h / /tmp /var
             vgs || true
+            findmnt /var
+            lvs --units b --nosuffix -o lv_path,lv_size
+            if [ "$OPERATION" = expand-var ]; then
+              test "$(findmnt -n -o SOURCE /var)" = /dev/mapper/vg0-lv--1
+              test "$(findmnt -n -o FSTYPE /var)" = ext4
+              size=$(lvs --noheadings --units b --nosuffix -o lv_size /dev/vg0/lv-1 | tr -d ' ')
+              if awk "BEGIN {exit !($size < 9500000000)}"; then
+                lvextend --size +1536M --resizefs /dev/vg0/lv-1
+              fi
+              df -h /var
+              exit 0
+            fi
             du -x -h --max-depth=1 /var 2>/dev/null || true
             if [ "$OPERATION" = reclaim-cache ] || [ "$OPERATION" = reclaim-all-cache ]; then
               if pgrep -f '^docker compose' >/dev/null; then
