@@ -18,10 +18,12 @@ jobs:
           const { chromium } = require('playwright-core');
           (async () => {
             const browser = await chromium.launch({ channel: 'chrome', args: ['--no-sandbox'] });
+            const page = await browser.newPage();
             try {
-              const page = await browser.newPage();
               const errors = [];
-              page.on('pageerror', error => errors.push(error.message));
+              page.on('pageerror', error => { errors.push(error.message); console.log('PAGE ERROR', error.message); });
+              page.on('requestfailed', req => console.log('REQUEST FAILED', new URL(req.url()).origin + new URL(req.url()).pathname, req.failure()?.errorText));
+              page.on('console', msg => { if (msg.type() === 'error') console.log('BROWSER ERROR', msg.text()); });
               await page.goto('https://chrms.chirocity.gov.et/login', { waitUntil: 'domcontentloaded', timeout: 60000 });
               const login = page.getByRole('button', { name: 'Sign in with Chiro Auth' });
               await login.waitFor({ timeout: 30000 });
@@ -34,6 +36,10 @@ jobs:
               await page.screenshot({ path: 'chiro-auth-login.png' });
               if (errors.length) throw new Error(errors.join('\n'));
               console.log('No JavaScript runtime errors.');
+            } catch (error) {
+              console.log('Visible page:', (await page.locator('body').innerText()).slice(0, 1800));
+              await page.screenshot({ path: 'chrms-failure.png' });
+              throw error;
             } finally { await browser.close(); }
           })().catch(error => { console.error(error); process.exitCode = 1; });
           NODE
