@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { accessToken, configureAuth, initializeSso, signIn, signOut, endSession, type AuthSettings } from "@/services/auth-session";
 import { api, getApiErrorMessage } from "@/services/api";
 
 export type ChrmsRole = "ADMIN" | "HOUSING_OFFICER";
@@ -20,6 +22,7 @@ export type LoginResult =
   | { ok: false; error: string };
 
 interface AuthContextType {
+  authMode: "local" | "keycloak";
   user: User | null;
   token: string | null;
   login: (email: string, password: string) => Promise<LoginResult>;
@@ -72,94 +75,56 @@ function mapApiUser(u: {
   };
 }
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => {
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [ready, setReady] = useState(false);
+  const [authMode, setAuthMode] = useState<"local" | "keycloak">("local");
   const [lastError, setLastError] = useState<string | null>(null);
-
-  const hydrate = useCallback(() => {
-    const t = localStorage.getItem(TOKEN_KEY);
-    const raw = localStorage.getItem(USER_KEY);
-    if (t && raw) {
-      try {
-        setToken(t);
-        setUser(JSON.parse(raw) as User);
-      } catch {
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(USER_KEY);
-      }
-    }
-    setIsLoading(false);
-  }, []);
-
+  const queryClient = useQueryClient();
+  const clear = useCallback(() => { setUser(null); setToken(null); queryClient.clear(); }, [queryClient]);
+  const hydrate = useCallback(async () => {
+    const t = await accessToken();
+    if (!t) { clear(); return; }
+    const { data } = await api.get("/auth/me");
+    setUser(mapApiUser(data)); setToken(t); setLastError(null);
+  }, [clear]);
   useEffect(() => {
-    hydrate();
-  }, [hydrate]);
-
-  const login = async (
-    email: string,
-    password: string
-  ): Promise<LoginResult> => {
-    setIsLoading(true);
-    setLastError(null);
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await api.get<AuthSettings>("/auth/config");
+        configureAuth(data); setAuthMode(data.mode);
+        if (data.mode === "keycloak") await initializeSso();
+        if (active) await hydrate();
+      } catch (error) {
+        if (active) { clear(); setLastError(getApiErrorMessage(error)); }
+      } finally { if (active) { setIsLoading(false); setReady(true); } }
+    })();
+    const ended = () => { clear(); setLastError("Your session ended. Please sign in again."); };
+    const refreshed = () => { void hydrate().catch(error => { clear(); setLastError(getApiErrorMessage(error)); }); };
+    window.addEventListener("chrms:session-ended", ended);
+    window.addEventListener("chrms:token-refreshed", refreshed);
+    return () => { active = false; window.removeEventListener("chrms:session-ended", ended); window.removeEventListener("chrms:token-refreshed", refreshed); };
+  }, [clear, hydrate]);
+  const login = async (email: string, password: string): Promise<LoginResult> => {
+    setIsLoading(true); setLastError(null);
     try {
-      const { data } = await api.post<{
-        access_token: string;
-        user: { id: string; email: string; fullName: string; role: string };
-      }>("/auth/login", { email, password });
-
-      const mapped = mapApiUser(data.user);
+      const { data } = await api.post("/auth/login", { email, password });
       localStorage.setItem(TOKEN_KEY, data.access_token);
-      localStorage.setItem(USER_KEY, JSON.stringify(mapped));
-      setToken(data.access_token);
-      setUser(mapped);
-      setIsLoading(false);
-      return { ok: true };
-    } catch (e) {
-      const error = getApiErrorMessage(e);
-      setLastError(error);
-      setIsLoading(false);
-      return { ok: false, error };
-    }
+      await hydrate(); return { ok: true };
+    } catch (e) { const error = getApiErrorMessage(e); setLastError(error); return { ok: false, error }; }
+    finally { setIsLoading(false); }
   };
-
   const loginWithSSO = async (_provider: string): Promise<LoginResult> => {
-    const error = "SSO is not configured for CHRMS. Use email and password.";
-    setLastError(error);
-    return { ok: false, error };
+    try { await signIn(); return { ok: true }; }
+    catch (e) { const error = getApiErrorMessage(e); setLastError(error); return { ok: false, error }; }
   };
-
-  const logout = () => {
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-  };
-
-  const hasPermission = (permission: string): boolean => {
-    if (!user) return false;
-    if (user.permissions.includes("*")) return true;
-    return user.permissions.includes(permission);
-  };
-
-  const value: AuthContextType = {
-    user,
-    token,
-    login,
-    loginWithSSO,
-    logout,
-    isAuthenticated: !!user && !!token,
-    hasPermission,
-    isLoading,
-    lastError,
-  };
-
-  return (
-    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-  );
+  const logout = () => { clear(); void signOut().catch(() => endSession()); };
+  const hasPermission = (permission: string) => !!user && (user.permissions.includes("*") || user.permissions.includes(permission));
+  if (!ready) return <div className="min-h-screen flex items-center justify-center">Loading CHRMS?</div>;
+  return <AuthContext.Provider value={{ user, token, login, loginWithSSO, logout, authMode, isAuthenticated: !!user && !!token, hasPermission, isLoading, lastError }}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {

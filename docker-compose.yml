@@ -19,6 +19,11 @@ services:
     image: chrms-api:local
     restart: unless-stopped
     environment:
+      AUTH_MODE: ${AUTH_MODE:-local}
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-https://auth.chirocity.gov.et}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-chirocity}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-chrms-web}
+      KEYCLOAK_AUDIENCE: ${KEYCLOAK_AUDIENCE:-chrms-api}
       NODE_ENV: production
       PORT: 3000
       DATABASE_URL: postgresql://chrms:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/chrms?schema=public

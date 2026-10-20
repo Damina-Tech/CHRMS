@@ -16,7 +16,7 @@ const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login, loginWithSSO } = useAuth();
+  const { login, loginWithSSO, logout, authMode, lastError } = useAuth();
   const { t } = useI18n();
   const navigate = useNavigate();
 
@@ -80,6 +80,19 @@ const LoginPage: React.FC = () => {
     }
   };
 
+  if (authMode === 'keycloak') return (
+    <div className="min-h-screen flex items-center justify-center p-4 bg-background">
+      <Card className="w-full max-w-md shadow-lg">
+        <CardHeader><CardTitle>Chiro City Housing &amp; Rental Management</CardTitle><CardDescription>Use your Chiro Auth account to access CHRMS.</CardDescription></CardHeader>
+        <CardContent className="space-y-4">
+          {lastError && <p role="alert" className="text-destructive">{lastError}</p>}
+          <Button className="w-full" disabled={isLoading} onClick={() => handleSSOLogin('Chiro Auth')}>Sign in with Chiro Auth</Button>
+          <Button variant="outline" className="w-full" onClick={logout}>Sign out / switch account</Button>
+          <p className="text-sm text-muted-foreground">Your administrator must grant access to CHRMS.</p>
+        </CardContent>
+      </Card>
+    </div>
+  );
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-background to-cyan-50 dark:from-background dark:via-background dark:to-background flex items-center justify-center p-4 relative" data-id="0v4to7nyx" data-path="src/pages/LoginPage.tsx">
       <div className="absolute top-4 end-4 flex items-center gap-1">

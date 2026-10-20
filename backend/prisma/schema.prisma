@@ -1,4 +1,4 @@
-// Chiro City Housing & Rental Management — database schema
+// Chiro City Housing & Rental Management â€” database schema
 generator client {
   provider = "prisma-client-js"
 }
@@ -28,7 +28,9 @@ enum PropertyStatus {
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
-  passwordHash String   @map("password_hash")
+  passwordHash String?  @map("password_hash")
+  keycloakSub String? @unique
+  keycloakIssuer String?
   fullName     String   @map("full_name")
   role         UserRole @default(HOUSING_OFFICER)
   createdAt    DateTime @default(now()) @map("created_at")

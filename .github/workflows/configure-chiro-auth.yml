@@ -1,0 +1,83 @@
+name: Configure CHRMS Chiro Auth
+on:
+  workflow_dispatch:
+    inputs:
+      link_email:
+        description: Existing CHRMS email to link (optional; requires verified Keycloak user ID)
+        required: false
+        type: string
+      keycloak_user_id:
+        description: Verified Keycloak user ID for the existing CHRMS account
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: chrms-production
+  cancel-in-progress: false
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: appleboy/ssh-action@v1.2.0
+        env:
+          APP_DIR: ${{ secrets.VPS_APP_DIR || '/var/www/CHRMS' }}
+          LINK_EMAIL: ${{ inputs.link_email }}
+          KEYCLOAK_SUB: ${{ inputs.keycloak_user_id }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          envs: APP_DIR,LINK_EMAIL,KEYCLOAK_SUB
+          command_timeout: 12m
+          script: |
+            set -eu
+            cd "$APP_DIR"
+            compose() { docker compose --env-file .env -f docker-compose.yml -f docker-compose.domains.yml "$@"; }
+            # Confirm the realm, public client, redirect URI and API network access first.
+            compose exec -T chrms-api node <<'NODE'
+            (async () => {
+              const url = process.env.KEYCLOAK_URL || 'https://auth.chirocity.gov.et';
+              const realm = process.env.KEYCLOAK_REALM || 'chirocity';
+              const discovery = await fetch(`${url}/realms/${realm}/.well-known/openid-configuration`, { signal: AbortSignal.timeout(15000) });
+              if (!discovery.ok) throw new Error('Chiro Auth realm discovery failed: ' + discovery.status);
+              const metadata = await discovery.json();
+              const authorization = new URL(metadata.authorization_endpoint);
+              authorization.search = new URLSearchParams({ client_id: process.env.KEYCLOAK_CLIENT_ID || 'chrms-web', redirect_uri: 'https://chrms.chirocity.gov.et/login', response_type: 'code', scope: 'openid profile email', code_challenge: 'mZPEmy0zntvbLvc8JL37x5xP3d3Md5k5s5mXkTe5YsQ', code_challenge_method: 'S256', state: 'chrms-preflight', nonce: 'chrms-preflight', prompt: 'none' }).toString();
+              const response = await fetch(authorization, { redirect: 'manual', signal: AbortSignal.timeout(15000) });
+              const location = response.headers.get('location');
+              if (response.status !== 302 || !location || !location.startsWith('https://chrms.chirocity.gov.et/login')) throw new Error('chrms-web client or redirect URI is not ready. HTTP ' + response.status);
+              console.log('Chiro Auth realm and chrms-web redirect preflight passed.');
+
+            })().catch(error => { console.error(error.message); process.exitCode = 1; });
+            NODE
+            if [ -n "$LINK_EMAIL" ] || [ -n "$KEYCLOAK_SUB" ]; then
+              test -n "$LINK_EMAIL" && test -n "$KEYCLOAK_SUB"
+              compose exec -T -e LINK_EMAIL -e KEYCLOAK_SUB chrms-api node scripts/link-keycloak-user.cjs
+            fi
+            install -d -m 700 /srv/chrms-auth-backups
+            backup="/srv/chrms-auth-backups/env-$(date -u +%Y%m%dT%H%M%SZ)"
+            cp -p .env "$backup"
+            chmod 600 "$backup"
+            rollback() { cat "$backup" > .env; compose up -d --no-deps chrms-api || true; }
+            trap rollback EXIT
+            python3 <<'PY'
+            from pathlib import Path
+            p = Path('.env')
+            lines = [line for line in p.read_text().splitlines() if not line.strip().startswith('AUTH_MODE=')]
+            p.write_text('\n'.join(lines) + '\nAUTH_MODE=keycloak\n')
+            p.chmod(0o600)
+            PY
+            compose up -d --no-deps --wait --wait-timeout 180 chrms-api
+            compose exec -T chrms-api node <<'NODE'
+            (async () => {
+              const config = await fetch('http://127.0.0.1:3000/auth/config').then(r => r.json());
+              if (config.mode !== 'keycloak') throw new Error('Central authentication did not activate.');
+              const login = await fetch('http://127.0.0.1:3000/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'disabled@example.com', password: 'not-a-real-password' }) });
+              if (login.status !== 403) throw new Error('Local password login was not disabled.');
+              console.log('CHRMS Chiro Auth activated; local password login is disabled.');
+            })().catch(error => { console.error(error.message); process.exitCode = 1; });
+            NODE
+            trap - EXIT

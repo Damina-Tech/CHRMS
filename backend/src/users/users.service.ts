@@ -1,9 +1,12 @@
 import {
   BadRequestException,
+  ForbiddenException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { authConfig } from '../auth/auth.config';
 import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { permissionsForRole } from '../common/constants/permissions';
@@ -22,7 +25,11 @@ const userPublicSelect = {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly config: ConfigService) {}
+
+  private assertLocalIdentityManagement() {
+    if (authConfig(this.config).mode === "keycloak") throw new ForbiddenException("Manage accounts, roles and passwords in Chiro Auth.");
+  }
 
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -66,6 +73,7 @@ export class UsersService {
   }
 
   async create(dto: CreateUserDto) {
+    this.assertLocalIdentityManagement();
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) throw new ConflictException('Email already registered');
     const passwordHash = await bcrypt.hash(dto.password, 10);
@@ -102,6 +110,7 @@ export class UsersService {
   }
 
   async update(id: string, dto: UpdateUserDto) {
+    if (dto.role !== undefined || dto.password !== undefined || dto.email !== undefined) this.assertLocalIdentityManagement();
     await this.findOne(id);
     if (dto.role !== undefined) {
       await this.assertCanChangeAdminRole(id, dto.role);
@@ -135,6 +144,7 @@ export class UsersService {
   }
 
   async remove(id: string, actorId: string) {
+    this.assertLocalIdentityManagement();
     if (id === actorId) {
       throw new BadRequestException('You cannot delete your own account');
     }

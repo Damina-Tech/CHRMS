@@ -1,3 +1,4 @@
+import { accessToken, endSession } from "./auth-session";
 import axios, { AxiosError } from "axios";
 
 const baseURL = import.meta.env.VITE_API_URL || "http://localhost:3000";
@@ -7,8 +8,8 @@ export const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("chrms_token");
+api.interceptors.request.use(async (config) => {
+  const token = config.url === "/auth/config" ? undefined : await accessToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -19,8 +20,7 @@ api.interceptors.response.use(
   (res) => res,
   (err: AxiosError) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem("chrms_token");
-      localStorage.removeItem("chrms_user");
+      endSession();
     }
     return Promise.reject(err);
   }
