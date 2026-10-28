@@ -4,6 +4,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, PropertyStatus } from '@prisma/client';
+import { join } from 'path';
+import {
+  paginated,
+  parsePagination,
+  PaginationQuery,
+} from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
 import { isRentalOverdue } from './rental-overdue.util';
 import { CreateRentalDto } from './dto/create-rental.dto';
@@ -13,36 +19,70 @@ import { UpdateRentalDto } from './dto/update-rental.dto';
 export class RentalsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll() {
-    const rows = await this.prisma.rental.findMany({
-      orderBy: { startDate: 'desc' },
-      include: {
-        tenant: true,
-        property: true,
-        payments: true,
-      },
+  private async nextAgreementNumber(
+    tx: Prisma.TransactionClient = this.prisma,
+  ): Promise<string> {
+    const year = new Date().getFullYear();
+    const prefix = `RA-${year}-`;
+    const latest = await tx.rental.findFirst({
+      where: { agreementNumber: { startsWith: prefix } },
+      orderBy: { agreementNumber: 'desc' },
+      select: { agreementNumber: true },
     });
+    let seq = 1;
+    if (latest?.agreementNumber) {
+      const n = parseInt(latest.agreementNumber.slice(prefix.length), 10);
+      if (!Number.isNaN(n)) seq = n + 1;
+    }
+    return `${prefix}${String(seq).padStart(4, '0')}`;
+  }
 
-    return rows.map((r) => ({
+  private filePublicPath(filename: string) {
+    return `/uploads/agreements/${filename}`;
+  }
+
+  async findAll(params: PaginationQuery = {}) {
+    const { page, pageSize, skip, take } = parsePagination(params);
+    const [rows, total] = await Promise.all([
+      this.prisma.rental.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+        include: {
+          tenant: true,
+          property: true,
+          payments: true,
+        },
+      }),
+      this.prisma.rental.count(),
+    ]);
+
+    const items = rows.map((r) => ({
       id: r.id,
       status: r.status,
+      agreementNumber: r.agreementNumber,
+      agreementFile: r.agreementFile,
       startDate: r.startDate,
       endDate: r.endDate,
       monthlyRent: Number(r.monthlyRent),
-      dueDay: r.dueDay,
       deposit: r.deposit ? Number(r.deposit) : null,
       tenant: { id: r.tenant.id, fullName: r.tenant.fullName, phone: r.tenant.phone },
       property: {
         id: r.property.id,
         code: r.property.code,
+        type: r.property.type,
+        category: r.property.category,
         woreda: r.property.woreda,
         kebele: r.property.kebele,
+        houseNumber: r.property.houseNumber,
       },
       overdue:
         r.status === 'active'
-          ? isRentalOverdue(r.dueDay, r.monthlyRent, r.payments)
+          ? isRentalOverdue(r.monthlyRent, r.payments)
           : false,
     }));
+
+    return paginated(items, total, page, pageSize);
   }
 
   async findOne(id: string) {
@@ -53,12 +93,17 @@ export class RentalsService {
     if (!r) throw new NotFoundException('Rental not found');
     const overdue =
       r.status === 'active'
-        ? isRentalOverdue(r.dueDay, r.monthlyRent, r.payments)
+        ? isRentalOverdue(r.monthlyRent, r.payments)
         : false;
-    return { ...r, monthlyRent: Number(r.monthlyRent), overdue };
+    return {
+      ...r,
+      monthlyRent: Number(r.monthlyRent),
+      deposit: r.deposit ? Number(r.deposit) : null,
+      overdue,
+    };
   }
 
-  async create(dto: CreateRentalDto) {
+  async create(dto: CreateRentalDto, file?: Express.Multer.File) {
     const property = await this.prisma.property.findUnique({
       where: { id: dto.propertyId },
       include: { rentals: { where: { status: 'active' } } },
@@ -75,14 +120,16 @@ export class RentalsService {
     if (!tenant) throw new NotFoundException('Tenant not found');
 
     return this.prisma.$transaction(async (tx) => {
+      const agreementNumber = await this.nextAgreementNumber(tx);
       const rental = await tx.rental.create({
         data: {
           propertyId: dto.propertyId,
           tenantId: dto.tenantId,
+          agreementNumber,
+          agreementFile: file ? this.filePublicPath(file.filename) : null,
           startDate: new Date(dto.startDate),
           endDate: dto.endDate ? new Date(dto.endDate) : null,
           monthlyRent: dto.monthlyRent,
-          dueDay: dto.dueDay,
           deposit: dto.deposit ?? null,
           status: 'active',
         },
@@ -95,14 +142,14 @@ export class RentalsService {
     });
   }
 
-  async update(id: string, dto: UpdateRentalDto) {
+  async update(id: string, dto: UpdateRentalDto, file?: Express.Multer.File) {
     const data: Prisma.RentalUpdateInput = {};
     if (dto.startDate !== undefined) data.startDate = new Date(dto.startDate);
     if (dto.endDate !== undefined) data.endDate = new Date(dto.endDate);
     if (dto.monthlyRent !== undefined) data.monthlyRent = dto.monthlyRent;
-    if (dto.dueDay !== undefined) data.dueDay = dto.dueDay;
     if (dto.deposit !== undefined) data.deposit = dto.deposit;
     if (dto.status !== undefined) data.status = dto.status;
+    if (file) data.agreementFile = this.filePublicPath(file.filename);
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -153,5 +200,10 @@ export class RentalsService {
       });
       return deleted;
     });
+  }
+
+  /** Absolute disk directory for multer */
+  static agreementsDir() {
+    return join(process.cwd(), 'uploads', 'agreements');
   }
 }

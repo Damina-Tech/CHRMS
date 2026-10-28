@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Card,
@@ -16,12 +16,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PaymentProgressBar } from "@/components/chrms/PaymentProgressBar";
+import { TablePagination } from "@/components/chrms/TablePagination";
 import { api, getApiErrorMessage } from "@/services/api";
+import { buildPageParams, Paginated } from "@/lib/pagination";
 import { Banknote } from "lucide-react";
 
 type Row = {
   id: string;
-  property: { code: string };
+  property: { code: string | null };
   buyer: { fullName: string };
   totalPrice: number;
   totalPaid: number;
@@ -31,13 +33,18 @@ type Row = {
 };
 
 export default function SalesPage() {
+  const [page, setPage] = useState(1);
+  const queryParams = buildPageParams({ page });
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ["sales"],
+    queryKey: ["sales", queryParams],
     queryFn: async () => {
-      const res = await api.get<Row[]>("/sales");
+      const res = await api.get<Paginated<Row>>(`/sales?${queryParams}`);
       return res.data;
     },
   });
+
+  const rows = data?.items ?? [];
 
   return (
     <div className="space-y-6">
@@ -54,67 +61,78 @@ export default function SalesPage() {
       <Card>
         <CardHeader>
           <CardTitle>Installment contracts</CardTitle>
-          <CardDescription>Progress reflects paid / total price</CardDescription>
+          <CardDescription>Newest first — progress reflects paid / total price</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           {error ? (
             <p className="text-destructive text-sm">
               {getApiErrorMessage(error)}
             </p>
           ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Property</TableHead>
-                    <TableHead>Buyer</TableHead>
-                    <TableHead>Total</TableHead>
-                    <TableHead>Paid</TableHead>
-                    <TableHead>Remaining</TableHead>
-                    <TableHead className="min-w-[140px]">Progress</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isLoading ? (
+            <>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8">
-                        Loading…
-                      </TableCell>
+                      <TableHead>Property</TableHead>
+                      <TableHead>Buyer</TableHead>
+                      <TableHead>Total</TableHead>
+                      <TableHead>Paid</TableHead>
+                      <TableHead>Remaining</TableHead>
+                      <TableHead className="min-w-[140px]">Progress</TableHead>
                     </TableRow>
-                  ) : (data ?? []).length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8">
-                        No sales
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    (data ?? []).map((s) => (
-                      <TableRow key={s.id}>
-                        <TableCell className="font-medium">
-                          {s.property.code}
-                        </TableCell>
-                        <TableCell>{s.buyer.fullName}</TableCell>
-                        <TableCell>
-                          ETB {s.totalPrice.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-green-700">
-                          ETB {s.totalPaid.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-amber-700">
-                          ETB {s.remaining.toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          <PaymentProgressBar value={s.completionPercentage} />
-                          <span className="text-xs text-muted-foreground">
-                            {s.completionPercentage.toFixed(1)}%
-                          </span>
+                  </TableHeader>
+                  <TableBody>
+                    {isLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8">
+                          Loading…
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                    ) : rows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8">
+                          No sales
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      rows.map((s) => (
+                        <TableRow key={s.id}>
+                          <TableCell className="font-medium">
+                            {s.property.code ?? "—"}
+                          </TableCell>
+                          <TableCell>{s.buyer.fullName}</TableCell>
+                          <TableCell>
+                            ETB {s.totalPrice.toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-green-700">
+                            ETB {s.totalPaid.toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-amber-700">
+                            ETB {s.remaining.toLocaleString()}
+                          </TableCell>
+                          <TableCell>
+                            <PaymentProgressBar value={s.completionPercentage} />
+                            <span className="text-xs text-muted-foreground">
+                              {s.completionPercentage.toFixed(1)}%
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              {data ? (
+                <TablePagination
+                  page={data.page}
+                  pageSize={data.pageSize}
+                  total={data.total}
+                  totalPages={data.totalPages}
+                  onPageChange={setPage}
+                />
+              ) : null}
+            </>
           )}
         </CardContent>
       </Card>

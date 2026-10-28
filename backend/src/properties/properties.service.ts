@@ -4,20 +4,59 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { Prisma, PropertyStatus } from '@prisma/client';
+import { Prisma, PropertyCategory, PropertyStatus, PropertyType } from '@prisma/client';
+import {
+  paginated,
+  parsePagination,
+  PaginationQuery,
+} from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
 import { saleTotals } from '../sales/sale-calculations.util';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
+import { assertPropertyCategoryType } from './property-category.util';
 
 @Injectable()
 export class PropertiesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(params: { q?: string; status?: PropertyStatus; woreda?: string }) {
+  private async nextPropertyCode(): Promise<string> {
+    const latest = await this.prisma.property.findFirst({
+      where: { code: { startsWith: 'PROP-' } },
+      orderBy: { code: 'desc' },
+      select: { code: true },
+    });
+    let seq = 1;
+    if (latest?.code) {
+      const n = parseInt(latest.code.replace(/^PROP-/, ''), 10);
+      if (!Number.isNaN(n)) seq = n + 1;
+    }
+    return `PROP-${String(seq).padStart(3, '0')}`;
+  }
+
+  private resolveRooms(type: PropertyType, rooms?: number | null) {
+    if (type === PropertyType.commercial) return null;
+    if (rooms == null) {
+      throw new BadRequestException('Rooms are required for residential properties');
+    }
+    return rooms;
+  }
+
+  async findAll(
+    params: PaginationQuery & {
+      q?: string;
+      status?: PropertyStatus;
+      woreda?: string;
+      type?: PropertyType;
+      category?: PropertyCategory;
+    },
+  ) {
+    const { page, pageSize, skip, take } = parsePagination(params);
     const where: Prisma.PropertyWhereInput = {};
     if (params.status) where.status = params.status;
     if (params.woreda) where.woreda = params.woreda;
+    if (params.type) where.type = params.type;
+    if (params.category) where.category = params.category;
     if (params.q?.trim()) {
       const q = params.q.trim();
       where.OR = [
@@ -28,25 +67,30 @@ export class PropertiesService {
       ];
     }
 
-    const rows = await this.prisma.property.findMany({
-      where,
-      orderBy: { code: 'asc' },
-      include: {
-        rentals: {
-          where: { status: 'active' },
-          take: 1,
-          include: { tenant: true },
+    const [rows, total] = await Promise.all([
+      this.prisma.property.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+        include: {
+          rentals: {
+            where: { status: 'active' },
+            take: 1,
+            include: { tenant: true },
+          },
+          sales: {
+            where: { status: { not: 'cancelled' } },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            include: { buyer: true },
+          },
         },
-        sales: {
-          where: { status: { not: 'cancelled' } },
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-          include: { buyer: true },
-        },
-      },
-    });
+      }),
+      this.prisma.property.count({ where }),
+    ]);
 
-    return rows.map((p) => {
+    const items = rows.map((p) => {
       const activeRental = p.rentals[0];
       const latestSale = p.sales[0];
       let assignee: string | null = null;
@@ -58,13 +102,20 @@ export class PropertiesService {
         code: p.code,
         location,
         type: p.type,
+        category: p.category,
         status: p.status,
         assignee,
         woreda: p.woreda,
         kebele: p.kebele,
         houseNumber: p.houseNumber,
+        area: Number(p.area),
+        rooms: p.rooms,
+        latitude: p.latitude != null ? Number(p.latitude) : null,
+        longitude: p.longitude != null ? Number(p.longitude) : null,
       };
     });
+
+    return paginated(items, total, page, pageSize);
   }
 
   async findOne(id: string) {
@@ -127,25 +178,30 @@ export class PropertiesService {
         id: p.id,
         code: p.code,
         type: p.type,
+        category: p.category,
         woreda: p.woreda,
         kebele: p.kebele,
         houseNumber: p.houseNumber,
         rooms: p.rooms,
         area: Number(p.area),
-        condition: p.condition,
         status: p.status,
+        latitude: p.latitude != null ? Number(p.latitude) : null,
+        longitude: p.longitude != null ? Number(p.longitude) : null,
       },
       tenant: activeRental
         ? {
             id: activeRental.tenant.id,
             fullName: activeRental.tenant.fullName,
             phone: activeRental.tenant.phone,
+            nationalId: activeRental.tenant.nationalId,
+            address: activeRental.tenant.address,
             rental: {
               id: activeRental.id,
+              agreementNumber: activeRental.agreementNumber,
+              agreementFile: activeRental.agreementFile,
               startDate: activeRental.startDate,
               endDate: activeRental.endDate,
               monthlyRent: Number(activeRental.monthlyRent),
-              dueDay: activeRental.dueDay,
               deposit: activeRental.deposit ? Number(activeRental.deposit) : null,
               status: activeRental.status,
             },
@@ -178,22 +234,35 @@ export class PropertiesService {
   }
 
   async create(dto: CreatePropertyDto) {
+    assertPropertyCategoryType(dto.type, dto.category);
+    const rooms = this.resolveRooms(dto.type, dto.rooms);
+    const code = dto.code?.trim() ? dto.code.trim() : await this.nextPropertyCode();
+
     try {
       return await this.prisma.property.create({
         data: {
-          code: dto.code,
+          code,
           type: dto.type,
+          category: dto.category ?? null,
           woreda: dto.woreda,
           kebele: dto.kebele,
           houseNumber: dto.houseNumber,
-          rooms: dto.rooms,
+          rooms,
           area: dto.area,
-          condition: dto.condition,
           status: dto.status ?? PropertyStatus.available,
+          latitude: dto.latitude ?? null,
+          longitude: dto.longitude ?? null,
         },
       });
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        const target = (e.meta?.target as string[] | string | undefined) ?? [];
+        const fields = Array.isArray(target) ? target.join(',') : String(target);
+        if (fields.includes('house_number') || fields.includes('property_address')) {
+          throw new ConflictException(
+            'House number already exists for this woreda and kebele',
+          );
+        }
         throw new ConflictException('Property code already exists');
       }
       throw e;
@@ -201,16 +270,30 @@ export class PropertiesService {
   }
 
   async update(id: string, dto: UpdatePropertyDto) {
+    const existing = await this.prisma.property.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Property not found');
+
+    const nextType = dto.type ?? existing.type;
+    const nextCategory =
+      dto.category !== undefined ? dto.category : existing.category;
+    assertPropertyCategoryType(nextType, nextCategory);
+
     const data: Prisma.PropertyUpdateInput = {};
-    if (dto.code !== undefined) data.code = dto.code;
+    if (dto.code !== undefined) data.code = dto.code?.trim() ? dto.code.trim() : null;
     if (dto.type !== undefined) data.type = dto.type;
+    if (dto.category !== undefined) data.category = dto.category;
     if (dto.woreda !== undefined) data.woreda = dto.woreda;
     if (dto.kebele !== undefined) data.kebele = dto.kebele;
     if (dto.houseNumber !== undefined) data.houseNumber = dto.houseNumber;
-    if (dto.rooms !== undefined) data.rooms = dto.rooms;
     if (dto.area !== undefined) data.area = dto.area;
-    if (dto.condition !== undefined) data.condition = dto.condition;
     if (dto.status !== undefined) data.status = dto.status;
+    if (dto.latitude !== undefined) data.latitude = dto.latitude;
+    if (dto.longitude !== undefined) data.longitude = dto.longitude;
+
+    if (dto.rooms !== undefined || dto.type !== undefined) {
+      const roomsInput = dto.rooms !== undefined ? dto.rooms : existing.rooms;
+      data.rooms = this.resolveRooms(nextType, roomsInput);
+    }
 
     try {
       return await this.prisma.property.update({
@@ -222,6 +305,13 @@ export class PropertiesService {
         throw new NotFoundException('Property not found');
       }
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        const target = (e.meta?.target as string[] | string | undefined) ?? [];
+        const fields = Array.isArray(target) ? target.join(',') : String(target);
+        if (fields.includes('house_number') || fields.includes('property_address')) {
+          throw new ConflictException(
+            'House number already exists for this woreda and kebele',
+          );
+        }
         throw new ConflictException('Property code already exists');
       }
       throw e;

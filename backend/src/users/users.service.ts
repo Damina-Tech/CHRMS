@@ -7,9 +7,14 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { authConfig } from '../auth/auth.config';
-import { UserRole } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { permissionsForRole } from '../common/constants/permissions';
+import {
+  paginated,
+  parsePagination,
+  PaginationQuery,
+} from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -40,11 +45,32 @@ export class UsersService {
     return user;
   }
 
-  async findAll() {
-    return this.prisma.user.findMany({
-      select: userPublicSelect,
-      orderBy: [{ role: 'asc' }, { fullName: 'asc' }],
-    });
+  async findAll(
+    params: PaginationQuery & { q?: string; role?: UserRole } = {},
+  ) {
+    const { page, pageSize, skip, take } = parsePagination(params);
+    const where: Prisma.UserWhereInput = {};
+    if (params.role) where.role = params.role;
+    if (params.q?.trim()) {
+      const q = params.q.trim();
+      where.OR = [
+        { fullName: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        select: userPublicSelect,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return paginated(items, total, page, pageSize);
   }
 
   async findOne(id: string) {

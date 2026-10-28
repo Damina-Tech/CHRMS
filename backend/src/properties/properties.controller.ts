@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
-import { PropertyStatus } from '@prisma/client';
+import { PropertyCategory, PropertyStatus, PropertyType } from '@prisma/client';
 import { Permission } from '../common/constants/permissions';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -19,8 +19,20 @@ export class PropertiesController {
     @Query('q') q?: string,
     @Query('status') status?: PropertyStatus,
     @Query('woreda') woreda?: string,
+    @Query('type') type?: PropertyType,
+    @Query('category') category?: PropertyCategory,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
-    return this.properties.findAll({ q, status, woreda });
+    return this.properties.findAll({
+      q,
+      status,
+      woreda,
+      type,
+      category,
+      page,
+      pageSize,
+    });
   }
 
   @Get(':id')

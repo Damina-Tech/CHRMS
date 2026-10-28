@@ -1,5 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import {
+  paginated,
+  parsePagination,
+  PaginationQuery,
+} from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
 import { saleTotals } from '../sales/sale-calculations.util';
 import { CreateSalePaymentDto } from './dto/create-sale-payment.dto';
@@ -8,7 +13,10 @@ import { CreateSalePaymentDto } from './dto/create-sale-payment.dto';
 export class SalePaymentsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(filters: { from?: string; to?: string; saleId?: string }) {
+  async findAll(
+    filters: PaginationQuery & { from?: string; to?: string; saleId?: string },
+  ) {
+    const { page, pageSize, skip, take } = parsePagination(filters);
     const where: Prisma.SalePaymentWhereInput = {};
     if (filters.saleId) where.saleId = filters.saleId;
     if (filters.from || filters.to) {
@@ -17,18 +25,25 @@ export class SalePaymentsService {
       if (filters.to) where.paidAt.lte = new Date(filters.to);
     }
 
-    return this.prisma.salePayment.findMany({
-      where,
-      orderBy: { paidAt: 'desc' },
-      include: {
-        sale: {
-          include: {
-            property: { select: { code: true } },
-            buyer: { select: { fullName: true } },
+    const [items, total] = await Promise.all([
+      this.prisma.salePayment.findMany({
+        where,
+        orderBy: { paidAt: 'desc' },
+        skip,
+        take,
+        include: {
+          sale: {
+            include: {
+              property: { select: { code: true } },
+              buyer: { select: { fullName: true } },
+            },
           },
         },
-      },
-    });
+      }),
+      this.prisma.salePayment.count({ where }),
+    ]);
+
+    return paginated(items, total, page, pageSize);
   }
 
   async create(dto: CreateSalePaymentDto) {

@@ -33,16 +33,25 @@ type PaymentRow = {
 type RentalDetail = {
   id: string;
   status: string;
+  agreementNumber?: string | null;
+  agreementFile?: string | null;
   startDate: string;
   endDate: string | null;
   monthlyRent: number;
-  dueDay: number;
   deposit: number | string | null;
   overdue: boolean;
-  tenant: { id: string; fullName: string; phone: string };
+  tenant: {
+    id: string;
+    fullName: string;
+    phone: string;
+    nationalId?: string | null;
+    address?: string | null;
+  };
   property: {
     id: string;
-    code: string;
+    code: string | null;
+    type?: string;
+    category?: string | null;
     woreda: string;
     kebele: string;
     houseNumber: string;
@@ -114,6 +123,12 @@ export default function RentalDetailPage() {
               Woreda {data.property.woreda}, Kebele {data.property.kebele}, #
               {data.property.houseNumber}
             </p>
+            {data.property.type ? (
+              <p className="capitalize">
+                {data.property.type}
+                {data.property.category ? ` · ${data.property.category}` : ""}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -132,6 +147,10 @@ export default function RentalDetailPage() {
               </Link>
             </p>
             <p>{data.tenant.phone}</p>
+            {data.tenant.address ? <p>{data.tenant.address}</p> : null}
+            {data.tenant.nationalId ? (
+              <p>National ID: {data.tenant.nationalId}</p>
+            ) : null}
           </CardContent>
         </Card>
       </div>
@@ -142,11 +161,27 @@ export default function RentalDetailPage() {
         </CardHeader>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
           <p>
-            <span className="text-muted-foreground">Monthly rent:</span> ETB{" "}
-            {data.monthlyRent.toLocaleString()}
+            <span className="text-muted-foreground">Agreement:</span>{" "}
+            {data.agreementNumber ?? "—"}
           </p>
           <p>
-            <span className="text-muted-foreground">Due day:</span> {data.dueDay}
+            <span className="text-muted-foreground">Agreement file:</span>{" "}
+            {data.agreementFile ? (
+              <a
+                className="text-primary hover:underline"
+                href={`${import.meta.env.VITE_API_URL || "http://localhost:3000"}${data.agreementFile}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Download
+              </a>
+            ) : (
+              "—"
+            )}
+          </p>
+          <p>
+            <span className="text-muted-foreground">Monthly rent:</span> ETB{" "}
+            {data.monthlyRent.toLocaleString()}
           </p>
           <p>
             <span className="text-muted-foreground">Deposit:</span>{" "}

@@ -18,6 +18,13 @@ enum PropertyType {
   commercial
 }
 
+/// Housing program / stock class. Condominium may sit under residential or commercial.
+enum PropertyCategory {
+  saving
+  kebele
+  condominium
+}
+
 enum PropertyStatus {
   available
   rented
@@ -38,21 +45,27 @@ model User {
 }
 
 model Property {
-  id          String         @id @default(uuid())
-  code        String         @unique
+  id          String            @id @default(uuid())
+  code        String?           @unique
   type        PropertyType
+  /// saving | kebele | condominium — required for residential; condominium also allowed on commercial
+  category    PropertyCategory?
   woreda      String
   kebele      String
-  houseNumber String         @map("house_number")
-  rooms       Int
-  area        Decimal        @db.Decimal(12, 2)
-  condition   String
-  status      PropertyStatus @default(available)
-  createdAt   DateTime       @default(now()) @map("created_at")
-  updatedAt   DateTime       @updatedAt @map("updated_at")
+  houseNumber String            @map("house_number")
+  /// Residential only; null for commercial
+  rooms       Int?
+  area        Decimal           @db.Decimal(12, 2)
+  status      PropertyStatus    @default(available)
+  latitude    Decimal?          @db.Decimal(10, 7)
+  longitude   Decimal?          @db.Decimal(10, 7)
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
 
   rentals Rental[]
   sales   Sale[]
+
+  @@unique([woreda, kebele, houseNumber], map: "property_address_unique")
 }
 
 model Tenant {
@@ -61,6 +74,7 @@ model Tenant {
   gender     String
   phone      String
   nationalId String?  @unique @map("national_id")
+  address    String?
   familySize Int      @map("family_size")
   status     String   @default("active")
   createdAt  DateTime @default(now()) @map("created_at")
@@ -71,19 +85,20 @@ model Tenant {
 }
 
 model Rental {
-  id          String   @id @default(uuid())
-  propertyId  String   @map("property_id")
-  property    Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
-  tenantId    String   @map("tenant_id")
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  startDate   DateTime @map("start_date")
-  endDate     DateTime? @map("end_date")
-  monthlyRent Decimal  @map("monthly_rent") @db.Decimal(12, 2)
-  dueDay      Int      @map("due_day")
-  deposit     Decimal? @db.Decimal(12, 2)
-  status      String   @default("active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id              String    @id @default(uuid())
+  propertyId      String    @map("property_id")
+  property        Property  @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  tenantId        String    @map("tenant_id")
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  agreementNumber String    @unique @map("agreement_number")
+  agreementFile   String?   @map("agreement_file")
+  startDate       DateTime  @map("start_date")
+  endDate         DateTime? @map("end_date")
+  monthlyRent     Decimal   @map("monthly_rent") @db.Decimal(12, 2)
+  deposit         Decimal?  @db.Decimal(12, 2)
+  status          String    @default("active")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   payments RentalPayment[]
 }

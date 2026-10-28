@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { Permission } from '../common/constants/permissions';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -14,8 +14,12 @@ export class TenantsController {
 
   @Get()
   @RequirePermissions(Permission.TENANTS_READ)
-  findAll() {
-    return this.tenants.findAll();
+  findAll(
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.tenants.findAll({ q, page, pageSize });
   }
 
   @Get(':id')

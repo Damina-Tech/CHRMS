@@ -1,4 +1,19 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
 import { Permission } from '../common/constants/permissions';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -7,6 +22,23 @@ import { CreateRentalDto } from './dto/create-rental.dto';
 import { UpdateRentalDto } from './dto/update-rental.dto';
 import { RentalsService } from './rentals.service';
 
+const agreementUpload = FileInterceptor('agreementFile', {
+  storage: diskStorage({
+    destination: (_req, _file, cb) => cb(null, RentalsService.agreementsDir()),
+    filename: (_req, file, cb) => {
+      const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      cb(null, `${unique}${extname(file.originalname) || '.pdf'}`);
+    },
+  }),
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ok =
+      /pdf|msword|officedocument|image\//i.test(file.mimetype) ||
+      /\.(pdf|doc|docx|png|jpe?g)$/i.test(file.originalname);
+    cb(null, ok);
+  },
+});
+
 @Controller('rentals')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class RentalsController {
@@ -14,8 +46,11 @@ export class RentalsController {
 
   @Get()
   @RequirePermissions(Permission.RENTALS_READ)
-  findAll() {
-    return this.rentals.findAll();
+  findAll(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.rentals.findAll({ page, pageSize });
   }
 
   @Get(':id')
@@ -26,14 +61,23 @@ export class RentalsController {
 
   @Post()
   @RequirePermissions(Permission.RENTALS_WRITE)
-  create(@Body() dto: CreateRentalDto) {
-    return this.rentals.create(dto);
+  @UseInterceptors(agreementUpload)
+  create(
+    @Body() dto: CreateRentalDto,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.rentals.create(dto, file);
   }
 
   @Put(':id')
   @RequirePermissions(Permission.RENTALS_WRITE)
-  update(@Param('id') id: string, @Body() dto: UpdateRentalDto) {
-    return this.rentals.update(id, dto);
+  @UseInterceptors(agreementUpload)
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateRentalDto,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.rentals.update(id, dto, file);
   }
 
   @Delete(':id')

@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import { Permission } from '../common/constants/permissions';
 import {
   CurrentUser,
@@ -30,8 +31,13 @@ export class UsersController {
 
   @Get()
   @RequirePermissions(Permission.USERS_READ)
-  findAll() {
-    return this.users.findAll();
+  findAll(
+    @Query('q') q?: string,
+    @Query('role') role?: UserRole,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.users.findAll({ q, role, page, pageSize });
   }
 
   @Get(':id')

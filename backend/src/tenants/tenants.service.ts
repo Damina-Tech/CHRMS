@@ -5,37 +5,76 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import {
+  paginated,
+  PaginatedResult,
+  parsePagination,
+  PaginationQuery,
+} from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
+
+type TenantListItem = {
+  id: string;
+  fullName: string;
+  phone: string;
+  address: string | null;
+  status: string;
+  propertyCode: string | null;
+  propertyId: string | null;
+};
 
 @Injectable()
 export class TenantsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll() {
-    const tenants = await this.prisma.tenant.findMany({
-      orderBy: { fullName: 'asc' },
-      include: {
-        rentals: {
-          where: { status: 'active' },
-          take: 1,
-          include: { property: true },
-        },
-      },
-    });
+  async findAll(
+    params: PaginationQuery & { q?: string },
+  ): Promise<PaginatedResult<TenantListItem>> {
+    const { page, pageSize, skip, take } = parsePagination(params);
+    const where: Prisma.TenantWhereInput = {};
+    if (params.q?.trim()) {
+      const q = params.q.trim();
+      where.OR = [
+        { fullName: { contains: q, mode: 'insensitive' } },
+        { phone: { contains: q, mode: 'insensitive' } },
+        { nationalId: { contains: q, mode: 'insensitive' } },
+        { address: { contains: q, mode: 'insensitive' } },
+      ];
+    }
 
-    return tenants.map((t) => {
+    const [tenants, total] = await Promise.all([
+      this.prisma.tenant.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+        include: {
+          rentals: {
+            where: { status: 'active' },
+            take: 1,
+            include: { property: true },
+          },
+        },
+      }),
+      this.prisma.tenant.count({ where }),
+    ]);
+
+    const items = tenants.map((t) => {
       const r = t.rentals[0];
       return {
         id: t.id,
         fullName: t.fullName,
         phone: t.phone,
+        address: t.address,
         status: t.status,
         propertyCode: r?.property.code ?? null,
         propertyId: r?.property.id ?? null,
       };
     });
+
+    return paginated(items, total, page, pageSize);
   }
 
   async findOne(id: string) {
@@ -58,6 +97,7 @@ export class TenantsService {
           gender: dto.gender,
           phone: dto.phone,
           nationalId: dto.nationalId,
+          address: dto.address ?? null,
           familySize: dto.familySize,
           status: dto.status ?? 'active',
         },
@@ -76,6 +116,7 @@ export class TenantsService {
     if (dto.gender !== undefined) data.gender = dto.gender;
     if (dto.phone !== undefined) data.phone = dto.phone;
     if (dto.nationalId !== undefined) data.nationalId = dto.nationalId;
+    if (dto.address !== undefined) data.address = dto.address;
     if (dto.familySize !== undefined) data.familySize = dto.familySize;
     if (dto.status !== undefined) data.status = dto.status;
 

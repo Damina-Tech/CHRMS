@@ -17,8 +17,10 @@ export class SalePaymentsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('saleId') saleId?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
-    return this.payments.findAll({ from, to, saleId });
+    return this.payments.findAll({ from, to, saleId, page, pageSize });
   }
 
   @Post()

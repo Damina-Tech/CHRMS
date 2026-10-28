@@ -17,8 +17,10 @@ export class RentalPaymentsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('rentalId') rentalId?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
-    return this.payments.findAll({ from, to, rentalId });
+    return this.payments.findAll({ from, to, rentalId, page, pageSize });
   }
 
   @Post()

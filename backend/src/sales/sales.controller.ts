@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { Permission } from '../common/constants/permissions';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -13,8 +13,11 @@ export class SalesController {
 
   @Get()
   @RequirePermissions(Permission.SALES_READ)
-  findAll() {
-    return this.sales.findAll();
+  findAll(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.sales.findAll({ page, pageSize });
   }
 
   @Get(':id')

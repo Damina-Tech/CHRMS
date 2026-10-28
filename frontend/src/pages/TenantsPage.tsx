@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/chrms/StatusBadge";
 import { ConfirmActionDialog } from "@/components/chrms/ConfirmActionDialog";
+import { TablePagination } from "@/components/chrms/TablePagination";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,8 +44,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api, getApiErrorMessage } from "@/services/api";
+import { buildPageParams, Paginated } from "@/lib/pagination";
 import { toast } from "@/hooks/use-toast";
-import { Users, Trash2, Pencil, Plus, Eye, MoreHorizontal } from "lucide-react";
+import {
+  Users,
+  Trash2,
+  Pencil,
+  Plus,
+  Eye,
+  MoreHorizontal,
+  Search,
+} from "lucide-react";
 
 type Row = {
   id: string;
@@ -60,11 +70,15 @@ type TenantDetail = {
   gender: string;
   phone: string;
   nationalId: string | null;
+  address: string | null;
   familySize: number;
   status: string;
 };
 
 export default function TenantsPage() {
+  const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  const [page, setPage] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Row | null>(null);
   const [creating, setCreating] = useState(false);
@@ -74,16 +88,37 @@ export default function TenantsPage() {
     gender: "male",
     phone: "",
     nationalId: "",
+    address: "",
     familySize: "1",
     status: "active",
   });
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedQ(q.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const queryParams = useMemo(
+    () =>
+      buildPageParams({
+        page,
+        extra: { q: debouncedQ || undefined },
+      }),
+    [page, debouncedQ],
+  );
+
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["tenants"],
+    queryKey: ["tenants", queryParams],
     queryFn: async () => {
-      const res = await api.get<Row[]>("/tenants");
+      const res = await api.get<Paginated<Row>>(`/tenants?${queryParams}`);
       return res.data;
     },
   });
+
+  const rows = data?.items ?? [];
 
   const resetForm = () => {
     setForm({
@@ -91,6 +126,7 @@ export default function TenantsPage() {
       gender: "male",
       phone: "",
       nationalId: "",
+      address: "",
       familySize: "1",
       status: "active",
     });
@@ -104,6 +140,7 @@ export default function TenantsPage() {
         gender: form.gender,
         phone: form.phone,
         nationalId: form.nationalId || undefined,
+        address: form.address || undefined,
         familySize: Number(form.familySize),
         status: form.status,
       });
@@ -130,6 +167,7 @@ export default function TenantsPage() {
         gender: detail.gender ?? "male",
         phone: detail.phone ?? tenant.phone,
         nationalId: detail.nationalId ?? "",
+        address: detail.address ?? "",
         familySize: String(detail.familySize ?? 1),
         status: detail.status ?? tenant.status ?? "active",
       });
@@ -151,6 +189,7 @@ export default function TenantsPage() {
         gender: form.gender,
         phone: form.phone,
         nationalId: form.nationalId.trim() || undefined,
+        address: form.address.trim() || undefined,
         familySize: Number(form.familySize),
         status: form.status,
       });
@@ -249,6 +288,14 @@ export default function TenantsPage() {
                   onChange={(e) => setForm((f) => ({ ...f, nationalId: e.target.value }))}
                 />
               </div>
+              <div className="col-span-2">
+                <Label>Address</Label>
+                <Input
+                  value={form.address}
+                  onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                  placeholder="Woreda, kebele, house / street"
+                />
+              </div>
               <div>
                 <Label>Family size</Label>
                 <Input
@@ -259,7 +306,7 @@ export default function TenantsPage() {
                   required
                 />
               </div>
-              <div className="col-span-2">
+              <div>
                 <Label>Status</Label>
                 <Select
                   value={form.status}
@@ -285,14 +332,24 @@ export default function TenantsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Directory</CardTitle>
-          <CardDescription>Name, assigned property, contact</CardDescription>
+          <CardDescription>Newest first — search by name, phone, ID, or address</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search tenants…"
+              className="pl-9"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
           {error ? (
             <p className="text-destructive text-sm">
               {getApiErrorMessage(error)}
             </p>
           ) : (
+            <>
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
@@ -311,14 +368,14 @@ export default function TenantsPage() {
                         Loading…
                       </TableCell>
                     </TableRow>
-                  ) : (data ?? []).length === 0 ? (
+                  ) : rows.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center py-8">
                         No tenants
                       </TableCell>
                     </TableRow>
                   ) : (
-                    (data ?? []).map((t) => (
+                    rows.map((t) => (
                       <TableRow key={t.id}>
                         <TableCell className="font-medium">{t.fullName}</TableCell>
                         <TableCell>{t.propertyCode ?? "—"}</TableCell>
@@ -376,6 +433,16 @@ export default function TenantsPage() {
                 </TableBody>
               </Table>
             </div>
+            {data ? (
+              <TablePagination
+                page={data.page}
+                pageSize={data.pageSize}
+                total={data.total}
+                totalPages={data.totalPages}
+                onPageChange={setPage}
+              />
+            ) : null}
+            </>
           )}
         </CardContent>
       </Card>
@@ -429,10 +496,18 @@ export default function TenantsPage() {
               <Label>National ID</Label>
               <Input
                 type="text"
-                  autoComplete="off"
+                autoComplete="off"
                 placeholder="e.g. CHI-10001"
                 value={form.nationalId}
                 onChange={(e) => setForm((f) => ({ ...f, nationalId: e.target.value }))}
+              />
+            </div>
+            <div className="col-span-2">
+              <Label>Address</Label>
+              <Input
+                value={form.address}
+                onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                placeholder="Woreda, kebele, house / street"
               />
             </div>
             <div>
@@ -445,7 +520,7 @@ export default function TenantsPage() {
                 required
               />
             </div>
-            <div className="col-span-2">
+            <div>
               <Label>Status</Label>
               <Select
                 value={form.status}

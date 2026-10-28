@@ -18,7 +18,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { TablePagination } from "@/components/chrms/TablePagination";
 import { api, getApiErrorMessage } from "@/services/api";
+import { buildPageParams, Paginated } from "@/lib/pagination";
 import { CreditCard } from "lucide-react";
 import { format } from "date-fns";
 
@@ -29,7 +31,7 @@ type RentalPay = {
   method: string;
   receiptNo: string | null;
   rental: {
-    property: { code: string };
+    property: { code: string | null };
     tenant: { fullName: string };
   };
 };
@@ -40,7 +42,7 @@ type SalePay = {
   paidAt: string;
   method: string;
   sale: {
-    property: { code: string };
+    property: { code: string | null };
     buyer: { fullName: string };
   };
 };
@@ -48,31 +50,48 @@ type SalePay = {
 export default function PaymentsPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [rentalPage, setRentalPage] = useState(1);
+  const [salePage, setSalePage] = useState(1);
 
-  const qp = useMemo(() => {
-    const p = new URLSearchParams();
-    if (from) p.set("from", from);
-    if (to) p.set("to", to);
-    return p.toString();
-  }, [from, to]);
+  const filterExtra = useMemo(
+    () => ({
+      from: from || undefined,
+      to: to || undefined,
+    }),
+    [from, to],
+  );
+
+  const rentalParams = useMemo(
+    () => buildPageParams({ page: rentalPage, extra: filterExtra }),
+    [rentalPage, filterExtra],
+  );
+  const saleParams = useMemo(
+    () => buildPageParams({ page: salePage, extra: filterExtra }),
+    [salePage, filterExtra],
+  );
 
   const rentalQ = useQuery({
-    queryKey: ["rental-payments", qp],
+    queryKey: ["rental-payments", rentalParams],
     queryFn: async () => {
-      const url = qp ? `/rental-payments?${qp}` : "/rental-payments";
-      const res = await api.get<RentalPay[]>(url);
+      const res = await api.get<Paginated<RentalPay>>(
+        `/rental-payments?${rentalParams}`,
+      );
       return res.data;
     },
   });
 
   const saleQ = useQuery({
-    queryKey: ["sale-payments", qp],
+    queryKey: ["sale-payments", saleParams],
     queryFn: async () => {
-      const url = qp ? `/sale-payments?${qp}` : "/sale-payments";
-      const res = await api.get<SalePay[]>(url);
+      const res = await api.get<Paginated<SalePay>>(
+        `/sale-payments?${saleParams}`,
+      );
       return res.data;
     },
   });
+
+  const rentalRows = rentalQ.data?.items ?? [];
+  const saleRows = saleQ.data?.items ?? [];
 
   return (
     <div className="space-y-6">
@@ -97,12 +116,24 @@ export default function PaymentsPage() {
             <Input
               type="date"
               value={from}
-              onChange={(e) => setFrom(e.target.value)}
+              onChange={(e) => {
+                setFrom(e.target.value);
+                setRentalPage(1);
+                setSalePage(1);
+              }}
             />
           </div>
           <div className="flex-1">
             <Label>To</Label>
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            <Input
+              type="date"
+              value={to}
+              onChange={(e) => {
+                setTo(e.target.value);
+                setRentalPage(1);
+                setSalePage(1);
+              }}
+            />
           </div>
         </CardContent>
       </Card>
@@ -117,56 +148,69 @@ export default function PaymentsPage() {
             <CardHeader>
               <CardTitle>Rent receipts</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               {rentalQ.error ? (
                 <p className="text-destructive text-sm">
                   {getApiErrorMessage(rentalQ.error)}
                 </p>
               ) : (
-                <div className="rounded-md border overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Property</TableHead>
-                        <TableHead>Tenant</TableHead>
-                        <TableHead>Amount</TableHead>
-                        <TableHead>Method</TableHead>
-                        <TableHead>Receipt</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {rentalQ.isLoading ? (
+                <>
+                  <div className="rounded-md border overflow-x-auto">
+                    <Table>
+                      <TableHeader>
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center py-8">
-                            Loading…
-                          </TableCell>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Property</TableHead>
+                          <TableHead>Tenant</TableHead>
+                          <TableHead>Amount</TableHead>
+                          <TableHead>Method</TableHead>
+                          <TableHead>Receipt</TableHead>
                         </TableRow>
-                      ) : (rentalQ.data ?? []).length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={6} className="text-center py-8">
-                            No records
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        (rentalQ.data ?? []).map((p) => (
-                          <TableRow key={p.id}>
-                            <TableCell>
-                              {format(new Date(p.paidAt), "yyyy-MM-dd")}
+                      </TableHeader>
+                      <TableBody>
+                        {rentalQ.isLoading ? (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center py-8">
+                              Loading…
                             </TableCell>
-                            <TableCell>{p.rental.property.code}</TableCell>
-                            <TableCell>{p.rental.tenant.fullName}</TableCell>
-                            <TableCell>
-                              ETB {Number(p.amount).toLocaleString()}
-                            </TableCell>
-                            <TableCell>{p.method}</TableCell>
-                            <TableCell>{p.receiptNo ?? "—"}</TableCell>
                           </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
+                        ) : rentalRows.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center py-8">
+                              No records
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          rentalRows.map((p) => (
+                            <TableRow key={p.id}>
+                              <TableCell>
+                                {format(new Date(p.paidAt), "yyyy-MM-dd")}
+                              </TableCell>
+                              <TableCell>
+                                {p.rental.property.code ?? "—"}
+                              </TableCell>
+                              <TableCell>{p.rental.tenant.fullName}</TableCell>
+                              <TableCell>
+                                ETB {Number(p.amount).toLocaleString()}
+                              </TableCell>
+                              <TableCell>{p.method}</TableCell>
+                              <TableCell>{p.receiptNo ?? "—"}</TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  {rentalQ.data ? (
+                    <TablePagination
+                      page={rentalQ.data.page}
+                      pageSize={rentalQ.data.pageSize}
+                      total={rentalQ.data.total}
+                      totalPages={rentalQ.data.totalPages}
+                      onPageChange={setRentalPage}
+                    />
+                  ) : null}
+                </>
               )}
             </CardContent>
           </Card>
@@ -176,54 +220,67 @@ export default function PaymentsPage() {
             <CardHeader>
               <CardTitle>Sale installments</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               {saleQ.error ? (
                 <p className="text-destructive text-sm">
                   {getApiErrorMessage(saleQ.error)}
                 </p>
               ) : (
-                <div className="rounded-md border overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Property</TableHead>
-                        <TableHead>Buyer</TableHead>
-                        <TableHead>Amount</TableHead>
-                        <TableHead>Method</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {saleQ.isLoading ? (
+                <>
+                  <div className="rounded-md border overflow-x-auto">
+                    <Table>
+                      <TableHeader>
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center py-8">
-                            Loading…
-                          </TableCell>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Property</TableHead>
+                          <TableHead>Buyer</TableHead>
+                          <TableHead>Amount</TableHead>
+                          <TableHead>Method</TableHead>
                         </TableRow>
-                      ) : (saleQ.data ?? []).length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={5} className="text-center py-8">
-                            No records
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        (saleQ.data ?? []).map((p) => (
-                          <TableRow key={p.id}>
-                            <TableCell>
-                              {format(new Date(p.paidAt), "yyyy-MM-dd")}
+                      </TableHeader>
+                      <TableBody>
+                        {saleQ.isLoading ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center py-8">
+                              Loading…
                             </TableCell>
-                            <TableCell>{p.sale.property.code}</TableCell>
-                            <TableCell>{p.sale.buyer.fullName}</TableCell>
-                            <TableCell>
-                              ETB {Number(p.amount).toLocaleString()}
-                            </TableCell>
-                            <TableCell>{p.method}</TableCell>
                           </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
+                        ) : saleRows.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center py-8">
+                              No records
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          saleRows.map((p) => (
+                            <TableRow key={p.id}>
+                              <TableCell>
+                                {format(new Date(p.paidAt), "yyyy-MM-dd")}
+                              </TableCell>
+                              <TableCell>
+                                {p.sale.property.code ?? "—"}
+                              </TableCell>
+                              <TableCell>{p.sale.buyer.fullName}</TableCell>
+                              <TableCell>
+                                ETB {Number(p.amount).toLocaleString()}
+                              </TableCell>
+                              <TableCell>{p.method}</TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  {saleQ.data ? (
+                    <TablePagination
+                      page={saleQ.data.page}
+                      pageSize={saleQ.data.pageSize}
+                      total={saleQ.data.total}
+                      totalPages={saleQ.data.totalPages}
+                      onPageChange={setSalePage}
+                    />
+                  ) : null}
+                </>
               )}
             </CardContent>
           </Card>

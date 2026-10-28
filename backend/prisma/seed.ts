@@ -1,4 +1,10 @@
-import { PrismaClient, PropertyStatus, PropertyType, UserRole } from '@prisma/client';
+import {
+  PrismaClient,
+  PropertyCategory,
+  PropertyStatus,
+  PropertyType,
+  UserRole,
+} from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -37,11 +43,11 @@ async function main() {
   ];
 
   const tenantsData = [
-    { id: tenantIds[0], fullName: 'Abebe Bikila', gender: 'male', phone: '+251911000001', nationalId: 'CHI-10001', familySize: 4 },
-    { id: tenantIds[1], fullName: 'Tirunesh Dibaba', gender: 'female', phone: '+251911000002', nationalId: 'CHI-10002', familySize: 3 },
-    { id: tenantIds[2], fullName: 'Haile Gebrselassie', gender: 'male', phone: '+251911000003', nationalId: 'CHI-10003', familySize: 5 },
-    { id: tenantIds[3], fullName: 'Derartu Tulu', gender: 'female', phone: '+251911000004', nationalId: 'CHI-10004', familySize: 2 },
-    { id: tenantIds[4], fullName: 'Kenenisa Bekele', gender: 'male', phone: '+251911000005', nationalId: 'CHI-10005', familySize: 6 },
+    { id: tenantIds[0], fullName: 'Abebe Bikila', gender: 'male', phone: '+251911000001', nationalId: 'CHI-10001', address: 'Woreda 01, Kebele 03', familySize: 4 },
+    { id: tenantIds[1], fullName: 'Tirunesh Dibaba', gender: 'female', phone: '+251911000002', nationalId: 'CHI-10002', address: 'Woreda 01, Kebele 03', familySize: 3 },
+    { id: tenantIds[2], fullName: 'Haile Gebrselassie', gender: 'male', phone: '+251911000003', nationalId: 'CHI-10003', address: 'Woreda 02, Kebele 01', familySize: 5 },
+    { id: tenantIds[3], fullName: 'Derartu Tulu', gender: 'female', phone: '+251911000004', nationalId: 'CHI-10004', address: 'Woreda 02, Kebele 05', familySize: 2 },
+    { id: tenantIds[4], fullName: 'Kenenisa Bekele', gender: 'male', phone: '+251911000005', nationalId: 'CHI-10005', address: 'Woreda 03, Kebele 02', familySize: 6 },
   ];
 
   for (const t of tenantsData) {
@@ -56,41 +62,50 @@ async function main() {
     id: string;
     code: string;
     type: PropertyType;
+    category: PropertyCategory | null;
     woreda: string;
     kebele: string;
     houseNumber: string;
-    rooms: number;
+    rooms: number | null;
     area: string;
-    condition: string;
     status: PropertyStatus;
+    latitude?: string;
+    longitude?: string;
   }> = [
-    { id: 'prp-seed-01', code: 'PROP-001', type: PropertyType.residential, woreda: '01', kebele: '03', houseNumber: '12A', rooms: 3, area: '85.5', condition: 'good', status: PropertyStatus.rented },
-    { id: 'prp-seed-02', code: 'PROP-002', type: PropertyType.residential, woreda: '01', kebele: '03', houseNumber: '12B', rooms: 2, area: '62.0', condition: 'good', status: PropertyStatus.rented },
-    { id: 'prp-seed-03', code: 'PROP-003', type: PropertyType.commercial, woreda: '02', kebele: '01', houseNumber: 'C-5', rooms: 1, area: '45.0', condition: 'excellent', status: PropertyStatus.rented },
-    { id: 'prp-seed-04', code: 'PROP-004', type: PropertyType.residential, woreda: '02', kebele: '05', houseNumber: '8', rooms: 4, area: '110.0', condition: 'fair', status: PropertyStatus.sold },
-    { id: 'prp-seed-05', code: 'PROP-005', type: PropertyType.residential, woreda: '03', kebele: '02', houseNumber: '22', rooms: 3, area: '78.0', condition: 'good', status: PropertyStatus.sold },
-    { id: 'prp-seed-06', code: 'PROP-006', type: PropertyType.residential, woreda: '01', kebele: '07', houseNumber: '3', rooms: 2, area: '55.0', condition: 'good', status: PropertyStatus.available },
-    { id: 'prp-seed-07', code: 'PROP-007', type: PropertyType.commercial, woreda: '04', kebele: '01', houseNumber: 'Shop-2', rooms: 1, area: '30.0', condition: 'excellent', status: PropertyStatus.available },
-    { id: 'prp-seed-08', code: 'PROP-008', type: PropertyType.residential, woreda: '03', kebele: '04', houseNumber: '15', rooms: 3, area: '90.0', condition: 'maintenance', status: PropertyStatus.maintenance },
-    { id: 'prp-seed-09', code: 'PROP-009', type: PropertyType.residential, woreda: '02', kebele: '02', houseNumber: '7', rooms: 2, area: '60.0', condition: 'good', status: PropertyStatus.available },
-    { id: 'prp-seed-10', code: 'PROP-010', type: PropertyType.residential, woreda: '01', kebele: '01', houseNumber: '1', rooms: 5, area: '140.0', condition: 'excellent', status: PropertyStatus.available },
+    { id: 'prp-seed-01', code: 'PROP-001', type: PropertyType.residential, category: PropertyCategory.kebele, woreda: '01', kebele: '03', houseNumber: '12A', rooms: 3, area: '85.5', status: PropertyStatus.rented, latitude: '9.0891000', longitude: '40.8671000' },
+    { id: 'prp-seed-02', code: 'PROP-002', type: PropertyType.residential, category: PropertyCategory.saving, woreda: '01', kebele: '03', houseNumber: '12B', rooms: 2, area: '62.0', status: PropertyStatus.rented, latitude: '9.0894000', longitude: '40.8675000' },
+    { id: 'prp-seed-03', code: 'PROP-003', type: PropertyType.commercial, category: PropertyCategory.condominium, woreda: '02', kebele: '01', houseNumber: 'C-5', rooms: null, area: '45.0', status: PropertyStatus.rented, latitude: '9.0910000', longitude: '40.8700000' },
+    { id: 'prp-seed-04', code: 'PROP-004', type: PropertyType.residential, category: PropertyCategory.condominium, woreda: '02', kebele: '05', houseNumber: '8', rooms: 4, area: '110.0', status: PropertyStatus.sold },
+    { id: 'prp-seed-05', code: 'PROP-005', type: PropertyType.residential, category: PropertyCategory.kebele, woreda: '03', kebele: '02', houseNumber: '22', rooms: 3, area: '78.0', status: PropertyStatus.sold },
+    { id: 'prp-seed-06', code: 'PROP-006', type: PropertyType.residential, category: PropertyCategory.saving, woreda: '01', kebele: '07', houseNumber: '3', rooms: 2, area: '55.0', status: PropertyStatus.available },
+    { id: 'prp-seed-07', code: 'PROP-007', type: PropertyType.commercial, category: null, woreda: '04', kebele: '01', houseNumber: 'Shop-2', rooms: null, area: '30.0', status: PropertyStatus.available },
+    { id: 'prp-seed-08', code: 'PROP-008', type: PropertyType.residential, category: PropertyCategory.kebele, woreda: '03', kebele: '04', houseNumber: '15', rooms: 3, area: '90.0', status: PropertyStatus.maintenance },
+    { id: 'prp-seed-09', code: 'PROP-009', type: PropertyType.residential, category: PropertyCategory.condominium, woreda: '02', kebele: '02', houseNumber: '7', rooms: 2, area: '60.0', status: PropertyStatus.available },
+    { id: 'prp-seed-10', code: 'PROP-010', type: PropertyType.residential, category: PropertyCategory.saving, woreda: '01', kebele: '01', houseNumber: '1', rooms: 5, area: '140.0', status: PropertyStatus.available },
   ];
 
   for (const p of propertySpecs) {
     await prisma.property.upsert({
       where: { id: p.id },
-      update: {},
+      update: {
+        category: p.category,
+        rooms: p.rooms,
+        latitude: p.latitude ?? null,
+        longitude: p.longitude ?? null,
+      },
       create: {
         id: p.id,
         code: p.code,
         type: p.type,
+        category: p.category,
         woreda: p.woreda,
         kebele: p.kebele,
         houseNumber: p.houseNumber,
         rooms: p.rooms,
         area: p.area,
-        condition: p.condition,
         status: p.status,
+        latitude: p.latitude ?? null,
+        longitude: p.longitude ?? null,
       },
     });
   }
@@ -106,9 +121,9 @@ async function main() {
       id: r1,
       propertyId: 'prp-seed-01',
       tenantId: tenantIds[0],
+      agreementNumber: 'RA-2024-0001',
       startDate: new Date('2024-01-01'),
       monthlyRent: '4500',
-      dueDay: 5,
       deposit: '9000',
       status: 'active',
     },
@@ -121,9 +136,9 @@ async function main() {
       id: r2,
       propertyId: 'prp-seed-02',
       tenantId: tenantIds[1],
+      agreementNumber: 'RA-2024-0002',
       startDate: new Date('2024-03-15'),
       monthlyRent: '3200',
-      dueDay: 10,
       deposit: '6400',
       status: 'active',
     },
@@ -136,9 +151,9 @@ async function main() {
       id: r3,
       propertyId: 'prp-seed-03',
       tenantId: tenantIds[2],
+      agreementNumber: 'RA-2023-0001',
       startDate: new Date('2023-11-01'),
       monthlyRent: '8000',
-      dueDay: 1,
       deposit: '16000',
       status: 'active',
     },

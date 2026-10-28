@@ -1,5 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 import { AppModule } from './app.module';
 
 /** Comma-separated list in CORS_ORIGIN, e.g. http://localhost:8080,http://localhost:8081 */
@@ -18,7 +20,8 @@ function defaultDevOrigins(): string[] {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

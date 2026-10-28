@@ -1,10 +1,9 @@
+import { Type } from 'class-transformer';
 import {
   IsDateString,
-  IsInt,
   IsNumber,
   IsOptional,
   IsString,
-  Max,
   Min,
 } from 'class-validator';
 
@@ -22,17 +21,13 @@ export class CreateRentalDto {
   @IsDateString()
   endDate?: string;
 
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   monthlyRent: number;
 
-  /** Day of month rent is due (1–28 recommended) */
-  @IsInt()
-  @Min(1)
-  @Max(28)
-  dueDay: number;
-
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   deposit?: number;

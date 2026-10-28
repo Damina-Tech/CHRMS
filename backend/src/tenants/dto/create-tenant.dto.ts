@@ -14,6 +14,10 @@ export class CreateTenantDto {
   @IsString()
   nationalId?: string;
 
+  @IsOptional()
+  @IsString()
+  address?: string;
+
   @IsInt()
   @Min(0)
   familySize: number;

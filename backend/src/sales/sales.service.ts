@@ -4,6 +4,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PropertyStatus } from '@prisma/client';
+import {
+  paginated,
+  parsePagination,
+  PaginationQuery,
+} from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
 import { saleTotals } from './sale-calculations.util';
 import { CreateSaleDto } from './dto/create-sale.dto';
@@ -12,17 +17,23 @@ import { CreateSaleDto } from './dto/create-sale.dto';
 export class SalesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll() {
-    const sales = await this.prisma.sale.findMany({
-      orderBy: { startDate: 'desc' },
-      include: {
-        buyer: true,
-        property: true,
-        payments: true,
-      },
-    });
+  async findAll(params: PaginationQuery = {}) {
+    const { page, pageSize, skip, take } = parsePagination(params);
+    const [sales, total] = await Promise.all([
+      this.prisma.sale.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+        include: {
+          buyer: true,
+          property: true,
+          payments: true,
+        },
+      }),
+      this.prisma.sale.count(),
+    ]);
 
-    return sales.map((s) => {
+    const items = sales.map((s) => {
       const m = saleTotals(s.totalPrice, s.payments);
       return {
         id: s.id,
@@ -39,6 +50,8 @@ export class SalesService {
         isCompleted: m.isCompleted,
       };
     });
+
+    return paginated(items, total, page, pageSize);
   }
 
   async findOne(id: string) {

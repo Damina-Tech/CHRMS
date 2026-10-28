@@ -20,8 +20,8 @@ type RentalRow = {
   startDate: string;
   endDate: string | null;
   monthlyRent: unknown;
-  dueDay: number;
-  property: { id: string; code: string; woreda: string; kebele: string };
+  agreementNumber?: string;
+  property: { id: string; code: string | null; woreda: string; kebele: string };
 };
 
 type PurchaseRow = {
@@ -38,6 +38,7 @@ type TenantDetail = {
   gender: string;
   phone: string;
   nationalId: string | null;
+  address: string | null;
   familySize: number;
   status: string;
   rentals: RentalRow[];
@@ -98,6 +99,10 @@ export default function TenantDetailPage() {
             {data.nationalId ?? "—"}
           </p>
           <p>
+            <span className="text-muted-foreground">Address:</span>{" "}
+            {data.address ?? "—"}
+          </p>
+          <p>
             <span className="text-muted-foreground">Family size:</span>{" "}
             {data.familySize}
           </p>
@@ -138,8 +143,8 @@ export default function TenantDetailPage() {
                     </Button>
                   </div>
                   <p className="w-full text-muted-foreground">
-                    ETB {Number(r.monthlyRent).toLocaleString()} · Due day{" "}
-                    {r.dueDay} · Started{" "}
+                    ETB {Number(r.monthlyRent).toLocaleString()}
+                    {r.agreementNumber ? ` · ${r.agreementNumber}` : ""} · Started{" "}
                     {format(new Date(r.startDate), "MMM d, yyyy")}
                     {r.endDate
                       ? ` · Ends ${format(new Date(r.endDate), "MMM d, yyyy")}`

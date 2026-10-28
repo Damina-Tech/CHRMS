@@ -18,6 +18,10 @@ export class UpdateTenantDto {
   nationalId?: string;
 
   @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
   @IsInt()
   @Min(0)
   familySize?: number;

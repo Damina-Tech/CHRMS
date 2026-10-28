@@ -43,8 +43,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ConfirmActionDialog } from "@/components/chrms/ConfirmActionDialog";
+import { TablePagination } from "@/components/chrms/TablePagination";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, getApiErrorMessage } from "@/services/api";
+import { buildPageParams, Paginated } from "@/lib/pagination";
 import { toast } from "@/hooks/use-toast";
 import {
   UserPlus,
@@ -90,7 +92,9 @@ export default function UsersPage() {
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState("users");
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
   const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<ChrmsUser | null>(null);
@@ -110,13 +114,35 @@ export default function UsersPage() {
     password: "",
   });
 
-  const { data: users = [], isLoading: usersLoading, error: usersError } = useQuery({
-    queryKey: ["users"],
+  React.useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedQ(searchTerm.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+
+  const usersParams = useMemo(
+    () =>
+      buildPageParams({
+        page,
+        extra: {
+          q: debouncedQ || undefined,
+          role: roleFilter !== "all" ? roleFilter : undefined,
+        },
+      }),
+    [page, debouncedQ, roleFilter],
+  );
+
+  const { data: usersPage, isLoading: usersLoading, error: usersError } = useQuery({
+    queryKey: ["users", usersParams],
     queryFn: async () => {
-      const res = await api.get<ChrmsUser[]>("/users");
+      const res = await api.get<Paginated<ChrmsUser>>(`/users?${usersParams}`);
       return res.data;
     },
   });
+
+  const users = usersPage?.items ?? [];
 
   const { data: rolesOverview = [], isLoading: rolesLoading } = useQuery({
     queryKey: ["users", "roles-overview"],
@@ -208,23 +234,15 @@ export default function UsersPage() {
     },
   });
 
-  const filteredUsers = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase();
-    return users.filter((u) => {
-      const matchQ =
-        !q ||
-        u.fullName.toLowerCase().includes(q) ||
-        u.email.toLowerCase().includes(q);
-      const matchRole = roleFilter === "all" || u.role === roleFilter;
-      return matchQ && matchRole;
-    });
-  }, [users, searchTerm, roleFilter]);
-
   const stats = useMemo(() => {
     const admins = users.filter((u) => u.role === "ADMIN").length;
     const officers = users.filter((u) => u.role === "HOUSING_OFFICER").length;
-    return { total: users.length, admins, officers };
-  }, [users]);
+    return {
+      total: usersPage?.total ?? users.length,
+      admins,
+      officers,
+    };
+  }, [users, usersPage?.total]);
 
   const openEdit = (u: ChrmsUser) => {
     setEditing(u);
@@ -428,7 +446,13 @@ export default function UsersPage() {
                       className="pl-8 w-64 max-w-full"
                     />
                   </div>
-                  <Select value={roleFilter} onValueChange={setRoleFilter}>
+                  <Select
+                    value={roleFilter}
+                    onValueChange={(v) => {
+                      setRoleFilter(v);
+                      setPage(1);
+                    }}
+                  >
                     <SelectTrigger className="w-44">
                       <SelectValue placeholder="Role" />
                     </SelectTrigger>
@@ -441,14 +465,15 @@ export default function UsersPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               {usersError ? (
                 <p className="text-destructive text-sm">{getApiErrorMessage(usersError)}</p>
               ) : usersLoading ? (
                 <p className="text-muted-foreground text-sm py-8 text-center">Loading…</p>
-              ) : filteredUsers.length === 0 ? (
+              ) : users.length === 0 ? (
                 <p className="text-muted-foreground text-sm py-8 text-center">No users match</p>
               ) : (
+                <>
                 <div className="rounded-md border">
                   <Table>
                     <TableHeader>
@@ -460,7 +485,7 @@ export default function UsersPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredUsers.map((u) => (
+                      {users.map((u) => (
                         <TableRow key={u.id}>
                           <TableCell>
                             <div className="flex items-center gap-3">
@@ -512,6 +537,16 @@ export default function UsersPage() {
                     </TableBody>
                   </Table>
                 </div>
+                {usersPage ? (
+                  <TablePagination
+                    page={usersPage.page}
+                    pageSize={usersPage.pageSize}
+                    total={usersPage.total}
+                    totalPages={usersPage.totalPages}
+                    onPageChange={setPage}
+                  />
+                ) : null}
+                </>
               )}
             </CardContent>
           </Card>
