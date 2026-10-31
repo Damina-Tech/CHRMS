@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -21,6 +22,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { useUsers, useNotifications } from "@/store";
+import { api, getApiErrorMessage } from "@/services/api";
+import { toast } from "@/hooks/use-toast";
 import {
   Building,
   Clock,
@@ -34,6 +37,7 @@ import {
   Globe,
   Database,
   Key,
+  Home,
 } from "lucide-react";
 
 // 🧪 Mock initial settings
@@ -63,8 +67,49 @@ const mockSettings = {
 };
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState("company");
+  const qc = useQueryClient();
+  const [activeTab, setActiveTab] = useState("housing");
   const [isDirty, setIsDirty] = useState(false);
+  const [rentalDueDay, setRentalDueDay] = useState("5");
+
+  const settingsQ = useQuery({
+    queryKey: ["settings"],
+    queryFn: async () => {
+      const res = await api.get<{
+        rentalDueDay: number;
+        reminderDaysBefore: number;
+      }>("/settings");
+      return res.data;
+    },
+  });
+
+  useEffect(() => {
+    if (settingsQ.data) {
+      setRentalDueDay(String(settingsQ.data.rentalDueDay));
+    }
+  }, [settingsQ.data]);
+
+  const saveHousing = useMutation({
+    mutationFn: async () => {
+      const res = await api.put("/settings", {
+        rentalDueDay: Number(rentalDueDay),
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      toast({ title: "Housing settings saved" });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["rentals"] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+    onError: (err) => {
+      toast({
+        title: "Could not save settings",
+        description: getApiErrorMessage(err),
+        variant: "destructive",
+      });
+    },
+  });
 
   const [companySettings, setCompanySettings] = useState({
     name: "Acme Corporation",
@@ -180,7 +225,8 @@ export default function SettingsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-6 w-full">
+        <TabsList className="grid grid-cols-7 w-full">
+          <TabsTrigger value="housing">Housing</TabsTrigger>
           <TabsTrigger value="company">Company</TabsTrigger>
           <TabsTrigger value="working-hours">Working Hours</TabsTrigger>
           <TabsTrigger value="leaves">Leave Policies</TabsTrigger>
@@ -188,6 +234,52 @@ export default function SettingsPage() {
           <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="housing" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Home className="h-5 w-5" />
+                Rental due day
+              </CardTitle>
+              <CardDescription>
+                One global day of the month when rent is due for every active
+                rental. Reminders appear 5 days before that day.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 max-w-md">
+              {settingsQ.error ? (
+                <p className="text-sm text-destructive">
+                  {getApiErrorMessage(settingsQ.error)}
+                </p>
+              ) : null}
+              <div>
+                <Label htmlFor="rental-due-day">Due day of month (1–28)</Label>
+                <Input
+                  id="rental-due-day"
+                  type="number"
+                  min={1}
+                  max={28}
+                  value={rentalDueDay}
+                  onChange={(e) => setRentalDueDay(e.target.value)}
+                  disabled={settingsQ.isLoading}
+                />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Reminder lead time is fixed at{" "}
+                {settingsQ.data?.reminderDaysBefore ?? 5} days before the due
+                day.
+              </p>
+              <Button
+                onClick={() => saveHousing.mutate()}
+                disabled={saveHousing.isPending || settingsQ.isLoading}
+              >
+                <Save className="mr-2 h-4 w-4" />
+                {saveHousing.isPending ? "Saving…" : "Save housing settings"}
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="company" className="space-y-6">
           <Card>

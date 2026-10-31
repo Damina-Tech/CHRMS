@@ -1,4 +1,6 @@
 import React from "react";
+import { Link } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { useI18n } from "@/contexts/I18nContext";
 import { ThemeSwitcher } from "@/components/chrms/ThemeSwitcher";
@@ -24,11 +26,23 @@ import {
   HelpCircle,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { api } from "@/services/api";
+import { formatDistanceToNow } from "date-fns";
 
 interface HeaderProps {
   onToggleSidebar: () => void;
   isCollapsed: boolean;
 }
+
+type AppNotification = {
+  id: string;
+  title: string;
+  message: string;
+  read: boolean;
+  createdAt: string;
+  entityType?: string | null;
+  entityId?: string | null;
+};
 
 const getInitials = (name: string) => {
   return name
@@ -41,29 +55,40 @@ const getInitials = (name: string) => {
 const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
   const { user, logout } = useAuth();
   const { t } = useI18n();
+  const qc = useQueryClient();
 
-  const notifications = [
-    {
-      id: 1,
-      message: "New leave request from Alice Employee",
-      time: "5 min ago",
-      unread: true,
+  const notifQ = useQuery({
+    queryKey: ["notifications"],
+    queryFn: async () => {
+      const res = await api.get<{
+        items: AppNotification[];
+        unreadCount: number;
+      }>("/notifications");
+      return res.data;
     },
-    {
-      id: 2,
-      message: "Payroll processing completed",
-      time: "1 hour ago",
-      unread: true,
-    },
-    {
-      id: 3,
-      message: "Monthly report is ready",
-      time: "2 hours ago",
-      unread: false,
-    },
-  ];
+    refetchInterval: 60_000,
+  });
 
-  const unreadCount = notifications.filter((n) => n.unread).length;
+  const markAll = useMutation({
+    mutationFn: async () => {
+      await api.patch("/notifications/read-all");
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+
+  const markOne = useMutation({
+    mutationFn: async (id: string) => {
+      await api.patch(`/notifications/${id}/read`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+
+  const notifications = notifQ.data?.items ?? [];
+  const unreadCount = notifQ.data?.unreadCount ?? 0;
 
   return (
     <header
@@ -176,6 +201,11 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
                   variant="ghost"
                   size="sm"
                   className="text-xs"
+                  disabled={unreadCount === 0 || markAll.isPending}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    markAll.mutate();
+                  }}
                   data-id="ms1kqkmqx"
                   data-path="src/components/layout/Header.tsx"
                 >
@@ -186,54 +216,89 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
                 data-id="3dt2r6psc"
                 data-path="src/components/layout/Header.tsx"
               />
-              {notifications.map((notification) => (
-                <DropdownMenuItem
-                  key={notification.id}
-                  className="flex flex-col items-start p-4"
-                  data-id="gc9a8fb34"
-                  data-path="src/components/layout/Header.tsx"
-                >
-                  <div
-                    className="flex items-center justify-between w-full"
-                    data-id="ekzs09m9k"
-                    data-path="src/components/layout/Header.tsx"
-                  >
-                    <p
-                      className={`text-sm ${
-                        notification.unread ? "font-medium" : "text-muted-foreground"
-                      }`}
-                      data-id="ulju4jo6b"
+              {notifications.length === 0 ? (
+                <div className="p-4 text-sm text-muted-foreground">
+                  No rent reminders yet
+                </div>
+              ) : (
+                notifications.slice(0, 8).map((notification) => {
+                  const href =
+                    notification.entityType === "rental" && notification.entityId
+                      ? `/rentals/${notification.entityId}`
+                      : undefined;
+                  return (
+                    <DropdownMenuItem
+                      key={notification.id}
+                      className="flex flex-col items-start p-4 cursor-pointer"
+                      onSelect={() => {
+                        if (!notification.read) markOne.mutate(notification.id);
+                      }}
+                      asChild={!!href}
+                      data-id="gc9a8fb34"
                       data-path="src/components/layout/Header.tsx"
                     >
-                      {notification.message}
-                    </p>
-                    {notification.unread && (
-                      <div
-                        className="h-2 w-2 bg-blue-600 rounded-full"
-                        data-id="c6fgg2mmo"
-                        data-path="src/components/layout/Header.tsx"
-                      ></div>
-                    )}
-                  </div>
-                  <p
-                    className="text-xs text-muted-foreground mt-1"
-                    data-id="t23dcthx9"
-                    data-path="src/components/layout/Header.tsx"
-                  >
-                    {notification.time}
-                  </p>
-                </DropdownMenuItem>
-              ))}
+                      {href ? (
+                        <Link to={href} className="flex flex-col items-start w-full">
+                          <div className="flex items-center justify-between w-full gap-2">
+                            <p
+                              className={`text-sm ${
+                                !notification.read
+                                  ? "font-medium"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              {notification.title}: {notification.message}
+                            </p>
+                            {!notification.read ? (
+                              <div className="h-2 w-2 shrink-0 bg-blue-600 rounded-full" />
+                            ) : null}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {formatDistanceToNow(
+                              new Date(notification.createdAt),
+                              { addSuffix: true },
+                            )}
+                          </p>
+                        </Link>
+                      ) : (
+                        <div className="flex flex-col items-start w-full">
+                          <div className="flex items-center justify-between w-full gap-2">
+                            <p
+                              className={`text-sm ${
+                                !notification.read
+                                  ? "font-medium"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              {notification.title}: {notification.message}
+                            </p>
+                            {!notification.read ? (
+                              <div className="h-2 w-2 shrink-0 bg-blue-600 rounded-full" />
+                            ) : null}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {formatDistanceToNow(
+                              new Date(notification.createdAt),
+                              { addSuffix: true },
+                            )}
+                          </p>
+                        </div>
+                      )}
+                    </DropdownMenuItem>
+                  );
+                })
+              )}
               <DropdownMenuSeparator
                 data-id="mrdrykd8c"
                 data-path="src/components/layout/Header.tsx"
               />
               <DropdownMenuItem
                 className="text-center text-blue-600 hover:text-blue-700"
+                asChild
                 data-id="0ay0omfwu"
                 data-path="src/components/layout/Header.tsx"
               >
-                {t("header.viewAllNotifications")}
+                <Link to="/payments">{t("header.viewAllNotifications")}</Link>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

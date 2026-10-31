@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -10,6 +10,21 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -21,7 +36,8 @@ import {
 import { TablePagination } from "@/components/chrms/TablePagination";
 import { api, getApiErrorMessage } from "@/services/api";
 import { buildPageParams, Paginated } from "@/lib/pagination";
-import { CreditCard } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { CreditCard, Plus } from "lucide-react";
 import { format } from "date-fns";
 
 type RentalPay = {
@@ -47,11 +63,47 @@ type SalePay = {
   };
 };
 
+type RentalOption = {
+  id: string;
+  monthlyRent: number;
+  status: string;
+  agreementNumber?: string | null;
+  tenant: { fullName: string };
+  property: { code: string | null };
+};
+
+type SaleOption = {
+  id: string;
+  status: string;
+  property: { code: string | null };
+  buyer: { fullName: string };
+};
+
+const emptyRentalForm = {
+  rentalId: "",
+  amount: "",
+  paidAt: format(new Date(), "yyyy-MM-dd"),
+  method: "cash",
+  receiptNo: "",
+};
+
+const emptySaleForm = {
+  saleId: "",
+  amount: "",
+  paidAt: format(new Date(), "yyyy-MM-dd"),
+  method: "cash",
+};
+
 export default function PaymentsPage() {
+  const qc = useQueryClient();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [rentalPage, setRentalPage] = useState(1);
   const [salePage, setSalePage] = useState(1);
+  const [rentalOpen, setRentalOpen] = useState(false);
+  const [saleOpen, setSaleOpen] = useState(false);
+  const [rentalForm, setRentalForm] = useState(emptyRentalForm);
+  const [saleForm, setSaleForm] = useState(emptySaleForm);
 
   const filterExtra = useMemo(
     () => ({
@@ -90,6 +142,80 @@ export default function PaymentsPage() {
     },
   });
 
+  const rentalsQ = useQuery({
+    queryKey: ["rentals-for-payment"],
+    enabled: rentalOpen,
+    queryFn: async () => {
+      const res = await api.get<Paginated<RentalOption>>(
+        `/rentals?${buildPageParams({ page: 1, pageSize: 100 })}`,
+      );
+      return res.data.items.filter((r) => r.status === "active");
+    },
+  });
+
+  const salesQ = useQuery({
+    queryKey: ["sales-for-payment"],
+    enabled: saleOpen,
+    queryFn: async () => {
+      const res = await api.get<Paginated<SaleOption>>(
+        `/sales?${buildPageParams({ page: 1, pageSize: 100 })}`,
+      );
+      return res.data.items.filter((s) => s.status === "active");
+    },
+  });
+
+  const createRentalPay = useMutation({
+    mutationFn: async () => {
+      await api.post("/rental-payments", {
+        rentalId: rentalForm.rentalId,
+        amount: Number(rentalForm.amount),
+        paidAt: new Date(rentalForm.paidAt).toISOString(),
+        method: rentalForm.method,
+        receiptNo: rentalForm.receiptNo || undefined,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Rental payment recorded" });
+      setRentalOpen(false);
+      setRentalForm(emptyRentalForm);
+      qc.invalidateQueries({ queryKey: ["rental-payments"] });
+      qc.invalidateQueries({ queryKey: ["rentals"] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+    onError: (err) => {
+      toast({
+        title: "Could not record payment",
+        description: getApiErrorMessage(err),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const createSalePay = useMutation({
+    mutationFn: async () => {
+      await api.post("/sale-payments", {
+        saleId: saleForm.saleId,
+        amount: Number(saleForm.amount),
+        paidAt: new Date(saleForm.paidAt).toISOString(),
+        method: saleForm.method,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Sale payment recorded" });
+      setSaleOpen(false);
+      setSaleForm(emptySaleForm);
+      qc.invalidateQueries({ queryKey: ["sale-payments"] });
+      qc.invalidateQueries({ queryKey: ["sales"] });
+    },
+    onError: (err) => {
+      toast({
+        title: "Could not record payment",
+        description: getApiErrorMessage(err),
+        variant: "destructive",
+      });
+    },
+  });
+
   const rentalRows = rentalQ.data?.items ?? [];
   const saleRows = saleQ.data?.items ?? [];
 
@@ -101,14 +227,14 @@ export default function PaymentsPage() {
           Payments
         </h1>
         <p className="text-gray-600 text-sm mt-1">
-          Rental receipts and sale installments
+          Record receipts and review rental / sale payments
         </p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Filters</CardTitle>
-          <CardDescription>Optional date range (ISO date)</CardDescription>
+          <CardDescription>Optional date range</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col sm:flex-row gap-4">
           <div className="flex-1">
@@ -145,8 +271,135 @@ export default function PaymentsPage() {
         </TabsList>
         <TabsContent value="rental">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle>Rent receipts</CardTitle>
+              <Dialog
+                open={rentalOpen}
+                onOpenChange={(o) => {
+                  setRentalOpen(o);
+                  if (!o) setRentalForm(emptyRentalForm);
+                }}
+              >
+                <DialogTrigger asChild>
+                  <Button size="sm">
+                    <Plus className="h-4 w-4 mr-1" />
+                    Record payment
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Record rental payment</DialogTitle>
+                  </DialogHeader>
+                  <form
+                    className="space-y-3"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!rentalForm.rentalId || !rentalForm.amount) return;
+                      createRentalPay.mutate();
+                    }}
+                  >
+                    <div>
+                      <Label>Rental</Label>
+                      <Select
+                        value={rentalForm.rentalId}
+                        onValueChange={(v) => {
+                          const r = rentalsQ.data?.find((x) => x.id === v);
+                          setRentalForm((f) => ({
+                            ...f,
+                            rentalId: v,
+                            amount:
+                              r && !f.amount
+                                ? String(r.monthlyRent)
+                                : f.amount,
+                          }));
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select active rental" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(rentalsQ.data ?? []).map((r) => (
+                            <SelectItem key={r.id} value={r.id}>
+                              {r.property.code ?? "—"} · {r.tenant.fullName}
+                              {r.agreementNumber
+                                ? ` (${r.agreementNumber})`
+                                : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Amount (ETB)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={rentalForm.amount}
+                        onChange={(e) =>
+                          setRentalForm((f) => ({
+                            ...f,
+                            amount: e.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label>Paid on</Label>
+                      <Input
+                        type="date"
+                        value={rentalForm.paidAt}
+                        onChange={(e) =>
+                          setRentalForm((f) => ({
+                            ...f,
+                            paidAt: e.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label>Method</Label>
+                      <Select
+                        value={rentalForm.method}
+                        onValueChange={(v) =>
+                          setRentalForm((f) => ({ ...f, method: v }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="cash">Cash</SelectItem>
+                          <SelectItem value="bank">Bank transfer</SelectItem>
+                          <SelectItem value="mobile">Mobile money</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Receipt no. (optional)</Label>
+                      <Input
+                        value={rentalForm.receiptNo}
+                        onChange={(e) =>
+                          setRentalForm((f) => ({
+                            ...f,
+                            receiptNo: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      className="w-full"
+                      disabled={createRentalPay.isPending}
+                    >
+                      {createRentalPay.isPending ? "Saving…" : "Save payment"}
+                    </Button>
+                  </form>
+                </DialogContent>
+              </Dialog>
             </CardHeader>
             <CardContent className="space-y-4">
               {rentalQ.error ? (
@@ -217,8 +470,112 @@ export default function PaymentsPage() {
         </TabsContent>
         <TabsContent value="sale">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle>Sale installments</CardTitle>
+              <Dialog
+                open={saleOpen}
+                onOpenChange={(o) => {
+                  setSaleOpen(o);
+                  if (!o) setSaleForm(emptySaleForm);
+                }}
+              >
+                <DialogTrigger asChild>
+                  <Button size="sm">
+                    <Plus className="h-4 w-4 mr-1" />
+                    Record payment
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Record sale payment</DialogTitle>
+                  </DialogHeader>
+                  <form
+                    className="space-y-3"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!saleForm.saleId || !saleForm.amount) return;
+                      createSalePay.mutate();
+                    }}
+                  >
+                    <div>
+                      <Label>Sale</Label>
+                      <Select
+                        value={saleForm.saleId}
+                        onValueChange={(v) =>
+                          setSaleForm((f) => ({ ...f, saleId: v }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select active sale" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(salesQ.data ?? []).map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.property.code ?? "—"} · {s.buyer.fullName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Amount (ETB)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={saleForm.amount}
+                        onChange={(e) =>
+                          setSaleForm((f) => ({
+                            ...f,
+                            amount: e.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label>Paid on</Label>
+                      <Input
+                        type="date"
+                        value={saleForm.paidAt}
+                        onChange={(e) =>
+                          setSaleForm((f) => ({
+                            ...f,
+                            paidAt: e.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label>Method</Label>
+                      <Select
+                        value={saleForm.method}
+                        onValueChange={(v) =>
+                          setSaleForm((f) => ({ ...f, method: v }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="cash">Cash</SelectItem>
+                          <SelectItem value="bank">Bank transfer</SelectItem>
+                          <SelectItem value="mobile">Mobile money</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      type="submit"
+                      className="w-full"
+                      disabled={createSalePay.isPending}
+                    >
+                      {createSalePay.isPending ? "Saving…" : "Save payment"}
+                    </Button>
+                  </form>
+                </DialogContent>
+              </Dialog>
             </CardHeader>
             <CardContent className="space-y-4">
               {saleQ.error ? (

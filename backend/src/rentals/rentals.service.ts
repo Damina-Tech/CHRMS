@@ -11,13 +11,17 @@ import {
   PaginationQuery,
 } from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 import { isRentalOverdue } from './rental-overdue.util';
 import { CreateRentalDto } from './dto/create-rental.dto';
 import { UpdateRentalDto } from './dto/update-rental.dto';
 
 @Injectable()
 export class RentalsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: SettingsService,
+  ) {}
 
   private async nextAgreementNumber(
     tx: Prisma.TransactionClient = this.prisma,
@@ -57,6 +61,7 @@ export class RentalsService {
       this.prisma.rental.count(),
     ]);
 
+    const { rentalDueDay } = await this.settings.get();
     const items = rows.map((r) => ({
       id: r.id,
       status: r.status,
@@ -78,7 +83,7 @@ export class RentalsService {
       },
       overdue:
         r.status === 'active'
-          ? isRentalOverdue(r.monthlyRent, r.payments)
+          ? isRentalOverdue(r.monthlyRent, r.payments, rentalDueDay)
           : false,
     }));
 
@@ -88,12 +93,17 @@ export class RentalsService {
   async findOne(id: string) {
     const r = await this.prisma.rental.findUnique({
       where: { id },
-      include: { tenant: true, property: true, payments: { orderBy: { paidAt: 'desc' } } },
+      include: {
+        tenant: true,
+        property: true,
+        payments: { orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }] },
+      },
     });
     if (!r) throw new NotFoundException('Rental not found');
+    const { rentalDueDay } = await this.settings.get();
     const overdue =
       r.status === 'active'
-        ? isRentalOverdue(r.monthlyRent, r.payments)
+        ? isRentalOverdue(r.monthlyRent, r.payments, rentalDueDay)
         : false;
     return {
       ...r,
@@ -101,6 +111,15 @@ export class RentalsService {
       deposit: r.deposit ? Number(r.deposit) : null,
       overdue,
     };
+  }
+
+  private assertDepositWithinRent(monthlyRent: number, deposit?: number | null) {
+    if (deposit == null) return;
+    if (deposit > monthlyRent) {
+      throw new BadRequestException(
+        'Deposit cannot be greater than monthly rent',
+      );
+    }
   }
 
   async create(dto: CreateRentalDto, file?: Express.Multer.File) {
@@ -118,6 +137,7 @@ export class RentalsService {
 
     const tenant = await this.prisma.tenant.findUnique({ where: { id: dto.tenantId } });
     if (!tenant) throw new NotFoundException('Tenant not found');
+    this.assertDepositWithinRent(dto.monthlyRent, dto.deposit);
 
     return this.prisma.$transaction(async (tx) => {
       const agreementNumber = await this.nextAgreementNumber(tx);
@@ -155,9 +175,27 @@ export class RentalsService {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.rental.findUnique({
           where: { id },
-          select: { id: true, propertyId: true, status: true },
+          select: {
+            id: true,
+            propertyId: true,
+            status: true,
+            monthlyRent: true,
+            deposit: true,
+          },
         });
         if (!existing) throw new NotFoundException('Rental not found');
+
+        const nextRent =
+          dto.monthlyRent !== undefined
+            ? dto.monthlyRent
+            : Number(existing.monthlyRent);
+        const nextDeposit =
+          dto.deposit !== undefined
+            ? dto.deposit
+            : existing.deposit != null
+              ? Number(existing.deposit)
+              : null;
+        this.assertDepositWithinRent(nextRent, nextDeposit);
 
         const rental = await tx.rental.update({
           where: { id },

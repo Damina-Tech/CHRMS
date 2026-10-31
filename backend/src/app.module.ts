@@ -11,6 +11,7 @@ import { RentalsModule } from './rentals/rentals.module';
 import { ReportsModule } from './reports/reports.module';
 import { SalePaymentsModule } from './sale-payments/sale-payments.module';
 import { SalesModule } from './sales/sales.module';
+import { SettingsModule } from './settings/settings.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { UsersModule } from './users/users.module';
 import { HealthController } from './health.controller';
@@ -31,6 +32,7 @@ import { AppService } from './app.service';
     SalePaymentsModule,
     DashboardModule,
     ReportsModule,
+    SettingsModule,
     NotificationsModule,
     AuditModule,
   ],

@@ -141,6 +141,29 @@ model SalePayment {
   createdAt DateTime @default(now()) @map("created_at")
 }
 
+/// Singleton app config (id always "default")
+model AppSetting {
+  id                   String   @id @default("default")
+  /// Day of month rent is due for all active rentals (1–28)
+  rentalDueDay         Int      @default(5) @map("rental_due_day")
+  /// Days before due day to raise a reminder (fixed product rule: 5)
+  reminderDaysBefore   Int      @default(5) @map("reminder_days_before")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  type       String
+  title      String
+  message    String
+  entityType String?  @map("entity_type")
+  entityId   String?  @map("entity_id")
+  read       Boolean  @default(false)
+  /// Prevents duplicate reminders for the same rental/period
+  dedupeKey  String   @unique @map("dedupe_key")
+  createdAt  DateTime @default(now()) @map("created_at")
+}
+
 /// Optional audit trail for sensitive actions
 model AuditLog {
   id        String   @id @default(uuid())

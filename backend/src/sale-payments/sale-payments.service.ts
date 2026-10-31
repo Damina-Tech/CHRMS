@@ -28,7 +28,7 @@ export class SalePaymentsService {
     const [items, total] = await Promise.all([
       this.prisma.salePayment.findMany({
         where,
-        orderBy: { paidAt: 'desc' },
+        orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }],
         skip,
         take,
         include: {

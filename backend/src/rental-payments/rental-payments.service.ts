@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
   paginated,
@@ -6,6 +10,7 @@ import {
   PaginationQuery,
 } from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
+import { paidInMonth } from '../rentals/rental-overdue.util';
 import { CreateRentalPaymentDto } from './dto/create-rental-payment.dto';
 
 @Injectable()
@@ -27,7 +32,7 @@ export class RentalPaymentsService {
     const [items, total] = await Promise.all([
       this.prisma.rentalPayment.findMany({
         where,
-        orderBy: { paidAt: 'desc' },
+        orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }],
         skip,
         take,
         include: {
@@ -46,14 +51,41 @@ export class RentalPaymentsService {
   }
 
   async create(dto: CreateRentalPaymentDto) {
-    const rental = await this.prisma.rental.findUnique({ where: { id: dto.rentalId } });
+    const rental = await this.prisma.rental.findUnique({
+      where: { id: dto.rentalId },
+      include: { payments: true },
+    });
     if (!rental) throw new NotFoundException('Rental not found');
+    if (rental.status !== 'active') {
+      throw new BadRequestException('Can only record payments on active rentals');
+    }
+    if (dto.amount <= 0) {
+      throw new BadRequestException('Amount must be greater than zero');
+    }
+
+    const paidAt = new Date(dto.paidAt);
+    const y = paidAt.getFullYear();
+    const m = paidAt.getMonth();
+    const monthlyRent = Number(rental.monthlyRent);
+    const alreadyPaid = paidInMonth(rental.payments, y, m);
+    const remaining = Math.round((monthlyRent - alreadyPaid) * 100) / 100;
+
+    if (remaining <= 0) {
+      throw new BadRequestException(
+        'This month’s rent is already fully paid',
+      );
+    }
+    if (dto.amount > remaining) {
+      throw new BadRequestException(
+        `Amount exceeds remaining rent for this month (ETB ${remaining.toLocaleString()} left)`,
+      );
+    }
 
     return this.prisma.rentalPayment.create({
       data: {
         rentalId: dto.rentalId,
         amount: dto.amount,
-        paidAt: new Date(dto.paidAt),
+        paidAt,
         method: dto.method,
         receiptNo: dto.receiptNo,
       },

@@ -482,7 +482,6 @@ export default function RentalsPage() {
           )}
         </CardContent>
       </Card>
-
       <Dialog
         open={!!editing}
         onOpenChange={(o) => {
