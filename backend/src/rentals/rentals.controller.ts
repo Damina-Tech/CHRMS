@@ -24,7 +24,13 @@ import { RentalsService } from './rentals.service';
 
 const agreementUpload = FileInterceptor('agreementFile', {
   storage: diskStorage({
-    destination: (_req, _file, cb) => cb(null, RentalsService.agreementsDir()),
+    destination: (_req, _file, cb) => {
+      try {
+        cb(null, RentalsService.agreementsDir());
+      } catch (err) {
+        cb(err as Error, '');
+      }
+    },
     filename: (_req, file, cb) => {
       const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
       cb(null, `${unique}${extname(file.originalname) || '.pdf'}`);
