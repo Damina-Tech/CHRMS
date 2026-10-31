@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, PropertyStatus } from '@prisma/client';
+import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import {
   paginated,
@@ -424,6 +425,8 @@ export class RentalsService {
 
   /** Absolute disk directory for multer */
   static agreementsDir() {
-    return join(process.cwd(), 'uploads', 'agreements');
+    const dir = join(process.cwd(), 'uploads', 'agreements');
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    return dir;
   }
 }

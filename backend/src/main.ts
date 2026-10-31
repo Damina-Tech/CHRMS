@@ -1,6 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { AppModule } from './app.module';
 
@@ -20,8 +21,14 @@ function defaultDevOrigins(): string[] {
 }
 
 async function bootstrap() {
+  const uploadsRoot = join(process.cwd(), 'uploads');
+  const agreementsDir = join(uploadsRoot, 'agreements');
+  if (!existsSync(agreementsDir)) {
+    mkdirSync(agreementsDir, { recursive: true });
+  }
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
+  app.useStaticAssets(uploadsRoot, { prefix: '/uploads/' });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

@@ -18,6 +18,8 @@ services:
     build: ./backend
     image: chrms-api:local
     restart: unless-stopped
+    volumes:
+      - uploads_data:/app/uploads
     environment:
       AUTH_MODE: ${AUTH_MODE:-local}
       KEYCLOAK_URL: ${KEYCLOAK_URL:-https://auth.chirocity.gov.et}
@@ -56,3 +58,4 @@ services:
       retries: 12
 volumes:
   postgres_data:
+  uploads_data:
