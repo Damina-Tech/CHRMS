@@ -56,6 +56,11 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { format } from "date-fns";
+import {
+  formatMonthRentStatus,
+  rentalStatusHelp,
+  type MonthRentStatus,
+} from "@/lib/rental-labels";
 
 type Row = {
   id: string;
@@ -65,11 +70,92 @@ type Row = {
   monthlyRent: number;
   deposit: number | null;
   overdue: boolean;
+  paymentStatus?: MonthRentStatus | null;
+  paidThisMonth?: number | null;
+  balanceDue?: number | null;
   tenant: { id: string; fullName: string };
   property: { id: string; code: string | null };
   startDate: string;
   endDate?: string | null;
 };
+
+function RentPaymentBadge({
+  leaseStatus,
+  paymentStatus,
+  balanceDue,
+}: {
+  leaseStatus: string;
+  paymentStatus?: MonthRentStatus | null;
+  balanceDue?: number | null;
+}) {
+  if (leaseStatus !== "active") {
+    return <span className="text-muted-foreground text-sm">—</span>;
+  }
+  const balanceLabel =
+    balanceDue != null && balanceDue > 0
+      ? ` · ETB ${balanceDue.toLocaleString()} due`
+      : balanceDue === 0
+        ? ""
+        : "";
+  switch (paymentStatus) {
+    case "paid":
+      return (
+        <div className="space-y-0.5">
+          <Badge className="bg-emerald-600 hover:bg-emerald-600 font-normal">
+            Paid
+          </Badge>
+          <p className="text-xs text-muted-foreground">Balance ETB 0</p>
+        </div>
+      );
+    case "partial":
+      return (
+        <div className="space-y-0.5">
+          <Badge className="bg-amber-500 hover:bg-amber-500 font-normal">
+            Partial
+          </Badge>
+          <p className="text-xs text-muted-foreground">
+            Balance ETB {(balanceDue ?? 0).toLocaleString()}
+          </p>
+        </div>
+      );
+    case "overdue":
+      return (
+        <div className="space-y-0.5">
+          <Badge variant="destructive" className="gap-1 font-normal">
+            <AlertTriangle className="h-3 w-3" />
+            Overdue
+          </Badge>
+          <p className="text-xs text-destructive">
+            Balance ETB {(balanceDue ?? 0).toLocaleString()}
+          </p>
+        </div>
+      );
+    case "unpaid":
+      return (
+        <div className="space-y-0.5">
+          <Badge variant="secondary" className="font-normal">
+            Unpaid
+          </Badge>
+          <p className="text-xs text-muted-foreground">
+            Balance ETB {(balanceDue ?? 0).toLocaleString()}
+          </p>
+        </div>
+      );
+    case "not_due":
+      return (
+        <Badge variant="outline" className="font-normal">
+          Not due yet
+        </Badge>
+      );
+    default:
+      return (
+        <Badge variant="secondary" className="font-normal">
+          {formatMonthRentStatus(paymentStatus)}
+          {balanceLabel}
+        </Badge>
+      );
+  }
+}
 
 type TenantOption = { id: string; fullName: string; status: string };
 type PropertyOption = { id: string; code: string | null; status: string };
@@ -327,15 +413,20 @@ export default function RentalsPage() {
                 />
               </div>
               <div>
-                <Label>Deposit</Label>
+                <Label>Security deposit</Label>
                 <Input
                   type="number"
                   min={0}
+                  max={form.monthlyRent || undefined}
                   value={form.deposit}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, deposit: e.target.value }))
                   }
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Held separately (≤ monthly rent). Recorded as a deposit
+                  payment, not monthly rent.
+                </p>
               </div>
               <div className="col-span-2">
                 <Button type="submit" className="w-full">
@@ -351,8 +442,8 @@ export default function RentalsPage() {
         <CardHeader>
           <CardTitle>Rentals</CardTitle>
           <CardDescription>
-            Newest first. Overdue when the previous month&apos;s rent is not
-            fully covered ({active.length} active on this page)
+            Newest first. “This month” is rent only: Paid, Partial, Unpaid,
+            Overdue, or Not due yet. {active.length} active on this page.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -371,20 +462,21 @@ export default function RentalsPage() {
                     <TableHead>Tenant</TableHead>
                     <TableHead>Monthly rent</TableHead>
                     <TableHead>Started</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Lease</TableHead>
+                    <TableHead>This month</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {isLoading ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8">
+                      <TableCell colSpan={8} className="text-center py-8">
                         Loading…
                       </TableCell>
                     </TableRow>
                   ) : rows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8">
+                      <TableCell colSpan={8} className="text-center py-8">
                         No rentals
                       </TableCell>
                     </TableRow>
@@ -403,21 +495,19 @@ export default function RentalsPage() {
                           {format(new Date(r.startDate), "MMM d, yyyy")}
                         </TableCell>
                         <TableCell>
-                          {r.status === "active" && r.overdue ? (
-                            <Badge
-                              variant="destructive"
-                              className="gap-1 font-normal"
-                            >
-                              <AlertTriangle className="h-3 w-3" />
-                              Overdue
-                            </Badge>
-                          ) : r.status === "active" ? (
-                            <Badge variant="secondary">Current</Badge>
-                          ) : (
-                            <Badge variant="outline" className="capitalize">
-                              {r.status}
-                            </Badge>
-                          )}
+                          <Badge
+                            variant="outline"
+                            className="capitalize font-normal"
+                          >
+                            {r.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <RentPaymentBadge
+                            leaseStatus={r.status}
+                            paymentStatus={r.paymentStatus}
+                            balanceDue={r.balanceDue}
+                          />
                         </TableCell>
                         <TableCell className="text-right">
                           <DropdownMenu>
@@ -557,15 +647,19 @@ export default function RentalsPage() {
               />
             </div>
             <div>
-              <Label>Deposit</Label>
+              <Label>Security deposit</Label>
               <Input
                 type="number"
                 min={0}
+                max={form.monthlyRent || undefined}
                 value={form.deposit}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, deposit: e.target.value }))
                 }
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Syncs the held deposit payment; does not change rent receipts.
+              </p>
             </div>
             <div className="col-span-2">
               <Label>Status</Label>
@@ -577,11 +671,18 @@ export default function RentalsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectItem value="active">Active — ongoing lease</SelectItem>
+                  <SelectItem value="completed">
+                    Completed — lease ended
+                  </SelectItem>
+                  <SelectItem value="cancelled">
+                    Cancelled — voided early
+                  </SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                {rentalStatusHelp(form.status)}
+              </p>
             </div>
             <div className="col-span-2">
               <Button type="submit" className="w-full">

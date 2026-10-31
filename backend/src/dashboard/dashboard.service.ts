@@ -1,22 +1,32 @@
 import { Injectable } from '@nestjs/common';
 import { PropertyStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  isRentExpectedThisMonth,
+  paidInMonth,
+} from '../rentals/rental-overdue.util';
+import { SettingsService } from '../settings/settings.service';
 import { saleTotals } from '../sales/sale-calculations.util';
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: SettingsService,
+  ) {}
 
   async getSummary() {
-    const [totalProperties, byStatus, rentalPayAgg, sales] = await Promise.all([
-      this.prisma.property.count(),
-      this.prisma.property.groupBy({
-        by: ['status'],
-        _count: { _all: true },
-      }),
-      this.prisma.rentalPayment.aggregate({ _sum: { amount: true } }),
-      this.prisma.sale.findMany({ include: { payments: true } }),
-    ]);
+    const [totalProperties, byStatus, rentalPayAgg, sales, appSettings] =
+      await Promise.all([
+        this.prisma.property.count(),
+        this.prisma.property.groupBy({
+          by: ['status'],
+          _count: { _all: true },
+        }),
+        this.prisma.rentalPayment.aggregate({ _sum: { amount: true } }),
+        this.prisma.sale.findMany({ include: { payments: true } }),
+        this.settings.get(),
+      ]);
 
     const statusMap = Object.fromEntries(
       byStatus.map((r) => [r.status, r._count._all]),
@@ -44,13 +54,12 @@ export class DashboardService {
     let outstandingRent = 0;
     const now = new Date();
     for (const r of activeRentals) {
+      if (!isRentExpectedThisMonth(r.startDate, appSettings.rentalDueDay, now)) {
+        continue;
+      }
       const y = now.getFullYear();
       const m = now.getMonth();
-      const start = new Date(y, m, 1);
-      const end = new Date(y, m + 1, 0, 23, 59, 59, 999);
-      const paidThisMonth = r.payments
-        .filter((p) => p.paidAt >= start && p.paidAt <= end)
-        .reduce((s, p) => s + Number(p.amount), 0);
+      const paidThisMonth = paidInMonth(r.payments, y, m);
       const due = Number(r.monthlyRent);
       if (paidThisMonth < due) outstandingRent += due - paidThisMonth;
     }

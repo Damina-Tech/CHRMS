@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
 import {
   dueDateForMonth,
+  isRentExpectedThisMonth,
   isRentalOverdue,
   paidInMonth,
 } from '../rentals/rental-overdue.util';
@@ -38,6 +39,8 @@ export class NotificationsService {
     });
 
     for (const r of rentals) {
+      if (!isRentExpectedThisMonth(r.startDate, rentalDueDay, asOf)) continue;
+
       const paid = paidInMonth(r.payments, y, m);
       const rent = Number(r.monthlyRent);
       if (paid >= rent) continue;
@@ -48,7 +51,15 @@ export class NotificationsService {
         r.agreementNumber;
       const shortfall = Math.round((rent - paid) * 100) / 100;
 
-      if (isRentalOverdue(r.monthlyRent, r.payments, rentalDueDay, asOf)) {
+      if (
+        isRentalOverdue(
+          r.monthlyRent,
+          r.payments,
+          rentalDueDay,
+          asOf,
+          r.startDate,
+        )
+      ) {
         await this.upsert({
           type: 'rent_overdue',
           title: 'Rent overdue',

@@ -38,6 +38,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  formatMonthRentStatus,
+  formatPaymentMethod,
+  rentalStatusHelp,
+  SECURITY_DEPOSIT_METHOD,
+  type MonthRentStatus,
+} from "@/lib/rental-labels";
 
 type PaymentRow = {
   id: string;
@@ -57,6 +64,9 @@ type RentalDetail = {
   monthlyRent: number;
   deposit: number | string | null;
   overdue: boolean;
+  paymentStatus?: MonthRentStatus | null;
+  paidThisMonth?: number | null;
+  balanceDue?: number | null;
   tenant: {
     id: string;
     fullName: string;
@@ -150,16 +160,32 @@ export default function RentalDetailPage() {
           </Link>
         </Button>
         <h1 className="text-2xl font-bold">Rental · {data.property.code}</h1>
-        {data.status === "active" && data.overdue ? (
+        <Badge variant="outline" className="capitalize font-normal">
+          {data.status}
+        </Badge>
+        {data.status === "active" && data.paymentStatus === "paid" ? (
+          <Badge className="bg-emerald-600 hover:bg-emerald-600 font-normal">
+            This month: Paid · Balance ETB 0
+          </Badge>
+        ) : data.status === "active" && data.paymentStatus === "partial" ? (
+          <Badge className="bg-amber-500 hover:bg-amber-500 font-normal">
+            This month: Partial · Balance ETB{" "}
+            {Number(data.balanceDue ?? 0).toLocaleString()}
+          </Badge>
+        ) : data.status === "active" && data.paymentStatus === "overdue" ? (
           <Badge variant="destructive" className="gap-1 font-normal">
             <AlertTriangle className="h-3 w-3" />
-            Overdue
+            Overdue · Balance ETB {Number(data.balanceDue ?? 0).toLocaleString()}
           </Badge>
-        ) : (
-          <Badge variant="secondary" className="capitalize">
-            {data.status}
+        ) : data.status === "active" && data.paymentStatus === "unpaid" ? (
+          <Badge variant="secondary" className="font-normal">
+            Unpaid · Balance ETB {Number(data.balanceDue ?? 0).toLocaleString()}
           </Badge>
-        )}
+        ) : data.status === "active" ? (
+          <Badge variant="secondary" className="font-normal">
+            This month: {formatMonthRentStatus(data.paymentStatus)}
+          </Badge>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -242,10 +268,13 @@ export default function RentalDetailPage() {
             {data.monthlyRent.toLocaleString()}
           </p>
           <p>
-            <span className="text-muted-foreground">Deposit:</span>{" "}
+            <span className="text-muted-foreground">Security deposit:</span>{" "}
             {data.deposit != null && data.deposit !== ""
-              ? `ETB ${Number(data.deposit).toLocaleString()}`
+              ? `ETB ${Number(data.deposit).toLocaleString()} (held, not rent)`
               : "—"}
+          </p>
+          <p className="sm:col-span-2 text-xs text-muted-foreground">
+            {rentalStatusHelp(data.status)}
           </p>
           <p>
             <span className="text-muted-foreground">Start:</span>{" "}
@@ -265,7 +294,8 @@ export default function RentalDetailPage() {
           <div>
             <CardTitle>Payments</CardTitle>
             <CardDescription>
-              Recorded rent payments (newest first)
+              Security deposit and rent receipts (newest first). Deposit does
+              not count toward monthly rent.
             </CardDescription>
           </div>
           {data.status === "active" ? (
@@ -276,7 +306,11 @@ export default function RentalDetailPage() {
                 if (o && !form.amount) {
                   setForm((f) => ({
                     ...f,
-                    amount: String(data.monthlyRent),
+                    amount: String(
+                      data.balanceDue != null && data.balanceDue > 0
+                        ? data.balanceDue
+                        : data.monthlyRent,
+                    ),
                   }));
                 }
               }}
@@ -385,7 +419,14 @@ export default function RentalDetailPage() {
                       <TableCell>
                         ETB {Number(p.amount).toLocaleString()}
                       </TableCell>
-                      <TableCell>{p.method}</TableCell>
+                      <TableCell>
+                        {formatPaymentMethod(p.method)}
+                        {p.method === SECURITY_DEPOSIT_METHOD ? (
+                          <Badge variant="outline" className="ml-2 font-normal">
+                            Held
+                          </Badge>
+                        ) : null}
+                      </TableCell>
                       <TableCell>{p.receiptNo ?? "—"}</TableCell>
                     </TableRow>
                   ))}

@@ -12,7 +12,12 @@ import {
 } from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
-import { isRentalOverdue } from './rental-overdue.util';
+import {
+  RENTAL_STATUSES,
+  SECURITY_DEPOSIT_METHOD,
+  type RentalStatus,
+} from './rental-payment.constants';
+import { getMonthRentStatus, paidInMonth } from './rental-overdue.util';
 import { CreateRentalDto } from './dto/create-rental.dto';
 import { UpdateRentalDto } from './dto/update-rental.dto';
 
@@ -45,6 +50,66 @@ export class RentalsService {
     return `/uploads/agreements/${filename}`;
   }
 
+  private assertDepositWithinRent(monthlyRent: number, deposit?: number | null) {
+    if (deposit == null) return;
+    if (deposit < 0) {
+      throw new BadRequestException('Deposit cannot be negative');
+    }
+    if (deposit > monthlyRent) {
+      throw new BadRequestException(
+        'Deposit cannot be greater than monthly rent',
+      );
+    }
+  }
+
+  private assertValidStatus(status: string): asserts status is RentalStatus {
+    if (!RENTAL_STATUSES.includes(status as RentalStatus)) {
+      throw new BadRequestException(
+        `Invalid status. Use: ${RENTAL_STATUSES.join(', ')}`,
+      );
+    }
+  }
+
+  /** Record / sync the security-deposit payment (held, not rent). */
+  private async syncDepositPayment(
+    tx: Prisma.TransactionClient,
+    rentalId: string,
+    deposit: number | null | undefined,
+    paidAt: Date,
+  ) {
+    const existing = await tx.rentalPayment.findFirst({
+      where: { rentalId, method: SECURITY_DEPOSIT_METHOD },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const amount = deposit != null && deposit > 0 ? deposit : 0;
+
+    if (amount <= 0) {
+      if (existing) {
+        await tx.rentalPayment.delete({ where: { id: existing.id } });
+      }
+      return;
+    }
+
+    if (existing) {
+      await tx.rentalPayment.update({
+        where: { id: existing.id },
+        data: { amount, paidAt },
+      });
+      return;
+    }
+
+    await tx.rentalPayment.create({
+      data: {
+        rentalId,
+        amount,
+        paidAt,
+        method: SECURITY_DEPOSIT_METHOD,
+        receiptNo: 'SECURITY-DEPOSIT',
+      },
+    });
+  }
+
   async findAll(params: PaginationQuery = {}) {
     const { page, pageSize, skip, take } = parsePagination(params);
     const [rows, total] = await Promise.all([
@@ -62,30 +127,56 @@ export class RentalsService {
     ]);
 
     const { rentalDueDay } = await this.settings.get();
-    const items = rows.map((r) => ({
-      id: r.id,
-      status: r.status,
-      agreementNumber: r.agreementNumber,
-      agreementFile: r.agreementFile,
-      startDate: r.startDate,
-      endDate: r.endDate,
-      monthlyRent: Number(r.monthlyRent),
-      deposit: r.deposit ? Number(r.deposit) : null,
-      tenant: { id: r.tenant.id, fullName: r.tenant.fullName, phone: r.tenant.phone },
-      property: {
-        id: r.property.id,
-        code: r.property.code,
-        type: r.property.type,
-        category: r.property.category,
-        woreda: r.property.woreda,
-        kebele: r.property.kebele,
-        houseNumber: r.property.houseNumber,
-      },
-      overdue:
+    const now = new Date();
+    const items = rows.map((r) => {
+      const monthlyRent = Number(r.monthlyRent);
+      const paymentStatus =
         r.status === 'active'
-          ? isRentalOverdue(r.monthlyRent, r.payments, rentalDueDay)
-          : false,
-    }));
+          ? getMonthRentStatus(
+              r.monthlyRent,
+              r.payments,
+              rentalDueDay,
+              now,
+              r.startDate,
+            )
+          : null;
+      const paidThisMonth =
+        r.status === 'active'
+          ? paidInMonth(r.payments, now.getFullYear(), now.getMonth())
+          : null;
+      const balanceDue =
+        paidThisMonth == null
+          ? null
+          : Math.max(0, Math.round((monthlyRent - paidThisMonth) * 100) / 100);
+      return {
+        id: r.id,
+        status: r.status,
+        agreementNumber: r.agreementNumber,
+        agreementFile: r.agreementFile,
+        startDate: r.startDate,
+        endDate: r.endDate,
+        monthlyRent,
+        deposit: r.deposit ? Number(r.deposit) : null,
+        tenant: {
+          id: r.tenant.id,
+          fullName: r.tenant.fullName,
+          phone: r.tenant.phone,
+        },
+        property: {
+          id: r.property.id,
+          code: r.property.code,
+          type: r.property.type,
+          category: r.property.category,
+          woreda: r.property.woreda,
+          kebele: r.property.kebele,
+          houseNumber: r.property.houseNumber,
+        },
+        paymentStatus,
+        overdue: paymentStatus === 'overdue',
+        paidThisMonth,
+        balanceDue,
+      };
+    });
 
     return paginated(items, total, page, pageSize);
   }
@@ -101,25 +192,35 @@ export class RentalsService {
     });
     if (!r) throw new NotFoundException('Rental not found');
     const { rentalDueDay } = await this.settings.get();
-    const overdue =
+    const now = new Date();
+    const paymentStatus =
       r.status === 'active'
-        ? isRentalOverdue(r.monthlyRent, r.payments, rentalDueDay)
-        : false;
+        ? getMonthRentStatus(
+            r.monthlyRent,
+            r.payments,
+            rentalDueDay,
+            now,
+            r.startDate,
+          )
+        : null;
+    const monthlyRent = Number(r.monthlyRent);
+    const paidThisMonth =
+      r.status === 'active'
+        ? paidInMonth(r.payments, now.getFullYear(), now.getMonth())
+        : null;
+    const balanceDue =
+      paidThisMonth == null
+        ? null
+        : Math.max(0, Math.round((monthlyRent - paidThisMonth) * 100) / 100);
     return {
       ...r,
-      monthlyRent: Number(r.monthlyRent),
+      monthlyRent,
       deposit: r.deposit ? Number(r.deposit) : null,
-      overdue,
+      paymentStatus,
+      overdue: paymentStatus === 'overdue',
+      paidThisMonth,
+      balanceDue,
     };
-  }
-
-  private assertDepositWithinRent(monthlyRent: number, deposit?: number | null) {
-    if (deposit == null) return;
-    if (deposit > monthlyRent) {
-      throw new BadRequestException(
-        'Deposit cannot be greater than monthly rent',
-      );
-    }
   }
 
   async create(dto: CreateRentalDto, file?: Express.Multer.File) {
@@ -141,19 +242,26 @@ export class RentalsService {
 
     return this.prisma.$transaction(async (tx) => {
       const agreementNumber = await this.nextAgreementNumber(tx);
+      const startDate = new Date(dto.startDate);
       const rental = await tx.rental.create({
         data: {
           propertyId: dto.propertyId,
           tenantId: dto.tenantId,
           agreementNumber,
           agreementFile: file ? this.filePublicPath(file.filename) : null,
-          startDate: new Date(dto.startDate),
+          startDate,
           endDate: dto.endDate ? new Date(dto.endDate) : null,
           monthlyRent: dto.monthlyRent,
           deposit: dto.deposit ?? null,
           status: 'active',
         },
       });
+      await this.syncDepositPayment(
+        tx,
+        rental.id,
+        dto.deposit ?? null,
+        startDate,
+      );
       await tx.property.update({
         where: { id: dto.propertyId },
         data: { status: PropertyStatus.rented },
@@ -163,6 +271,8 @@ export class RentalsService {
   }
 
   async update(id: string, dto: UpdateRentalDto, file?: Express.Multer.File) {
+    if (dto.status !== undefined) this.assertValidStatus(dto.status);
+
     const data: Prisma.RentalUpdateInput = {};
     if (dto.startDate !== undefined) data.startDate = new Date(dto.startDate);
     if (dto.endDate !== undefined) data.endDate = new Date(dto.endDate);
@@ -181,6 +291,8 @@ export class RentalsService {
             status: true,
             monthlyRent: true,
             deposit: true,
+            startDate: true,
+            endDate: true,
           },
         });
         if (!existing) throw new NotFoundException('Rental not found');
@@ -197,18 +309,88 @@ export class RentalsService {
               : null;
         this.assertDepositWithinRent(nextRent, nextDeposit);
 
+        const nextStatus = (dto.status ?? existing.status) as RentalStatus;
+        if (existing.status !== nextStatus) {
+          if (nextStatus === 'active') {
+            const otherActive = await tx.rental.count({
+              where: {
+                propertyId: existing.propertyId,
+                status: 'active',
+                NOT: { id: existing.id },
+              },
+            });
+            if (otherActive > 0) {
+              throw new BadRequestException(
+                'Property already has another active rental',
+              );
+            }
+            const property = await tx.property.findUnique({
+              where: { id: existing.propertyId },
+              select: { status: true },
+            });
+            if (!property) throw new NotFoundException('Property not found');
+            if (property.status !== PropertyStatus.available) {
+              throw new BadRequestException(
+                'Property must be available to reactivate this rental',
+              );
+            }
+          }
+
+          if (nextStatus === 'completed') {
+            const end =
+              dto.endDate !== undefined
+                ? new Date(dto.endDate)
+                : existing.endDate;
+            if (!end) {
+              throw new BadRequestException(
+                'Set an end date before marking the rental completed',
+              );
+            }
+            const endDay = new Date(end);
+            endDay.setHours(0, 0, 0, 0);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (today < endDay) {
+              throw new BadRequestException(
+                'Cannot complete before the lease end date. Use cancelled if the lease ended early.',
+              );
+            }
+          }
+
+          // Cancelled can happen any day; stamp end date if missing
+          if (
+            nextStatus === 'cancelled' &&
+            dto.endDate === undefined &&
+            !existing.endDate
+          ) {
+            data.endDate = new Date();
+          }
+        }
+
         const rental = await tx.rental.update({
           where: { id },
           data,
         });
 
-        const nextStatus = dto.status ?? existing.status;
+        if (dto.deposit !== undefined || dto.startDate !== undefined) {
+          await this.syncDepositPayment(
+            tx,
+            rental.id,
+            nextDeposit,
+            dto.startDate !== undefined
+              ? new Date(dto.startDate)
+              : existing.startDate,
+          );
+        }
+
         if (existing.status !== nextStatus) {
           await tx.property.update({
             where: { id: existing.propertyId },
             data: {
               status:
-                nextStatus === 'active' ? PropertyStatus.rented : PropertyStatus.available,
+                nextStatus === 'active'
+                  ? PropertyStatus.rented
+                  : PropertyStatus.available,
             },
           });
         }

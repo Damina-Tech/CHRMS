@@ -39,6 +39,11 @@ import { buildPageParams, Paginated } from "@/lib/pagination";
 import { toast } from "@/hooks/use-toast";
 import { CreditCard, Plus } from "lucide-react";
 import { format } from "date-fns";
+import { Badge } from "@/components/ui/badge";
+import {
+  formatMonthRentStatus,
+  formatPaymentMethod,
+} from "@/lib/rental-labels";
 
 type RentalPay = {
   id: string;
@@ -46,6 +51,9 @@ type RentalPay = {
   paidAt: string;
   method: string;
   receiptNo: string | null;
+  kind?: "rent" | "deposit";
+  monthStatus?: "paid" | "partial" | "unpaid" | null;
+  balanceDue?: number | null;
   rental: {
     property: { code: string | null };
     tenant: { fullName: string };
@@ -66,6 +74,7 @@ type SalePay = {
 type RentalOption = {
   id: string;
   monthlyRent: number;
+  balanceDue?: number | null;
   status: string;
   agreementNumber?: string | null;
   tenant: { fullName: string };
@@ -304,12 +313,16 @@ export default function PaymentsPage() {
                         value={rentalForm.rentalId}
                         onValueChange={(v) => {
                           const r = rentalsQ.data?.find((x) => x.id === v);
+                          const suggested =
+                            r?.balanceDue != null && r.balanceDue > 0
+                              ? r.balanceDue
+                              : r?.monthlyRent;
                           setRentalForm((f) => ({
                             ...f,
                             rentalId: v,
                             amount:
-                              r && !f.amount
-                                ? String(r.monthlyRent)
+                              suggested != null
+                                ? String(suggested)
                                 : f.amount,
                           }));
                         }}
@@ -416,6 +429,9 @@ export default function PaymentsPage() {
                           <TableHead>Property</TableHead>
                           <TableHead>Tenant</TableHead>
                           <TableHead>Amount</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Month status</TableHead>
+                          <TableHead>Balance</TableHead>
                           <TableHead>Method</TableHead>
                           <TableHead>Receipt</TableHead>
                         </TableRow>
@@ -423,13 +439,13 @@ export default function PaymentsPage() {
                       <TableBody>
                         {rentalQ.isLoading ? (
                           <TableRow>
-                            <TableCell colSpan={6} className="text-center py-8">
+                            <TableCell colSpan={9} className="text-center py-8">
                               Loading…
                             </TableCell>
                           </TableRow>
                         ) : rentalRows.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={6} className="text-center py-8">
+                            <TableCell colSpan={9} className="text-center py-8">
                               No records
                             </TableCell>
                           </TableRow>
@@ -446,7 +462,44 @@ export default function PaymentsPage() {
                               <TableCell>
                                 ETB {Number(p.amount).toLocaleString()}
                               </TableCell>
-                              <TableCell>{p.method}</TableCell>
+                              <TableCell>
+                                {p.kind === "deposit" ? (
+                                  <Badge variant="outline" className="font-normal">
+                                    Deposit
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="secondary" className="font-normal">
+                                    Rent
+                                  </Badge>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {p.kind === "deposit" ? (
+                                  <span className="text-muted-foreground">Held</span>
+                                ) : p.monthStatus === "paid" ? (
+                                  <Badge className="bg-emerald-600 hover:bg-emerald-600 font-normal">
+                                    Paid
+                                  </Badge>
+                                ) : p.monthStatus === "partial" ? (
+                                  <Badge className="bg-amber-500 hover:bg-amber-500 font-normal">
+                                    Partial
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="secondary" className="font-normal">
+                                    {formatMonthRentStatus(p.monthStatus)}
+                                  </Badge>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {p.kind === "deposit" ? (
+                                  "—"
+                                ) : (
+                                  <>ETB {Number(p.balanceDue ?? 0).toLocaleString()}</>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {formatPaymentMethod(p.method)}
+                              </TableCell>
                               <TableCell>{p.receiptNo ?? "—"}</TableCell>
                             </TableRow>
                           ))
